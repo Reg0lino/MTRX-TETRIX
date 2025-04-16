@@ -6,8 +6,8 @@
     <title>Matrix Tetris</title>
     <style>
         /* Basic page styling */
-        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: #000; font-family: 'Consolas', 'Lucida Console', 'Courier New', monospace; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; touch-action: none; }
-        canvas { display: block; position: absolute; top: 0; left: 0; }
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: #000; font-family: 'Consolas', 'Lucida Console', 'Courier New', monospace; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; touch-action: manipulation; /* Use manipulation to allow scrolling on sliders maybe? Revisit if needed */ }
+        canvas { display: block; position: absolute; top: 0; left: 0; cursor: default; /* Default cursor, change on elements */ }
 
         /* Fullscreen prompt styling */
         #fullscreen-prompt { display: none; /* Hide the prompt */ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: lime; background-color: rgba(0, 0, 0, 0.85); padding: 25px; border: 1px solid lime; font-size: 1.6em; text-align: center; cursor: pointer; z-index: 10; transition: transform 0.05s ease-out, border-color 0.05s ease-out; line-height: 1.4; }
@@ -21,20 +21,15 @@
     <div id="fullscreen-prompt">
         <span id="prompt-main-text">Tap or Press Enter to Start</span><br>
         <span id="prompt-fullscreen-text">(Requires Fullscreen)</span>
-        <span class="version-text" id="prompt-version">v1.21</span> <!-- Version bump -->
+        <span class="version-text" id="prompt-version">v1.34</span> <!-- Version bump -->
         <span class="instructions-text" id="prompt-instructions">
-            <strong>Controls:</strong><br>
-            <strong>Touch:</strong><br>
-            &nbsp; Tap Screen: Rotate<br>
-            &nbsp; Tap Hold/Next Area: Swap/Ignore<br>
-            &nbsp; Slide Finger: Move<br>
-            &nbsp; Flick Up/Down: Hard Drop<br>
-            <strong>Keyboard:</strong><br>
-            &nbsp; ← → : Move<br>
-            &nbsp; ↓ : Soft Drop<br>
-            &nbsp; ↑ : Hard Drop<br>
-            &nbsp; Space: Rotate<br>
-            &nbsp; Shift: Hold/Swap<br>
+             <strong>Controls:</strong><br>
+             <strong>Keyboard:</strong> P: Pause<br>
+               ← → : Move | ↓ : Soft Drop | ↑ : Hard Drop<br>
+               Space: Rotate | Shift: Hold/Swap<br>
+             <strong>Touch:</strong> Bottom-Left Icon: Pause<br>
+               Tap Screen: Rotate | Tap Hold/Next Area: Swap/Ignore<br>
+               Slide Finger: Move | Flick Up/Down: Hard Drop<br>
             (Lock Delay Active - No Infinite Spin)
         </span>
     </div>
@@ -54,16 +49,19 @@
         if (!canvas || !promptElement || !ctx || !promptMainText || !promptFullscreenText || !promptVersionText || !promptInstructionsText) { alert("CRITICAL ERROR: Elements missing."); return; }
         console.log(">>> Matrix Tetris STARTING <<<");
 
-        // Store original prompt content AFTER elements are confirmed to exist
         const ORIGINAL_PROMPT_MAIN = promptMainText.textContent;
         const ORIGINAL_PROMPT_FS = promptFullscreenText.textContent;
         const ORIGINAL_PROMPT_VERSION = promptVersionText.textContent;
-        const ORIGINAL_PROMPT_INSTRUCTIONS = promptInstructionsText.innerHTML;
+        const ORIGINAL_PROMPT_INSTRUCTIONS = promptInstructionsText.innerHTML; // Keep innerHTML for formatting
 
         // --- Audio Context & Sound ---
         let audioCtx = null;
         function initAudio() { if (!audioCtx && (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined')) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); console.log("AudioContext initialized."); } catch (e) { console.error("Error initializing AudioContext:", e); audioCtx = null; } } if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume().then(() => { console.log("AudioContext resumed!"); }).catch(e => console.error("AudioContext resume failed:", e)); } }
-        function playTone(frequency = 440, duration = 50, type = 'square', volume = 0.08) { volume *= 0.9; if (!audioCtx || audioCtx.state === 'suspended') { initAudio(); if (!audioCtx || audioCtx.state !== 'running') { return; } } if (audioCtx.state !== 'running') { return; } try { const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.setValueAtTime(frequency, audioCtx.currentTime); g.gain.setValueAtTime(volume, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000); o.connect(g); g.connect(audioCtx.destination); o.start(audioCtx.currentTime); o.stop(audioCtx.currentTime + duration / 1000); } catch (e) { console.error("Error playing tone:", e); } }
+        function playTone(frequency = 440, duration = 50, type = 'square', volume = 0.08) {
+            // <-- SFX Toggle Check -->
+            if (!settings_sfxEnabled) return;
+
+            volume *= 0.9; if (!audioCtx || audioCtx.state === 'suspended') { initAudio(); if (!audioCtx || audioCtx.state !== 'running') { return; } } if (audioCtx.state !== 'running') { return; } try { const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.setValueAtTime(frequency, audioCtx.currentTime); g.gain.setValueAtTime(volume, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000); o.connect(g); g.connect(audioCtx.destination); o.start(audioCtx.currentTime); o.stop(audioCtx.currentTime + duration / 1000); } catch (e) { console.error("Error playing tone:", e); } }
         const SOUNDS = {
             ROTATE: () => playTone(300, 30, 'triangle', 0.06),
             MOVE: () => playTone(150, 20, 'sine', 0.04),
@@ -73,136 +71,89 @@
             GAME_OVER: () => { playTone(200, 300, 'sawtooth', 0.15); setTimeout(() => playTone(150, 400, 'sawtooth', 0.15), 150); },
             HOLD_SWAP: () => playTone(450, 70, 'sine', 0.07),
             SOFT_DROP: () => playTone(90, 15, 'square', 0.03),
-            TETRIS_CLEAR: () => {
-                const baseFreq = 500; const interval = 60; const duration = 80; const vol = 0.12;
-                playTone(baseFreq, duration, 'triangle', vol);
-                setTimeout(() => playTone(baseFreq * 1.25, duration, 'triangle', vol), interval * 1);
-                setTimeout(() => playTone(baseFreq * 1.5, duration, 'triangle', vol), interval * 2);
-                setTimeout(() => playTone(baseFreq * 2, duration * 1.5, 'triangle', vol), interval * 3);
-            }
+            TETRIS_CLEAR: () => { const baseFreq = 500; const interval = 60; const duration = 80; const vol = 0.12; playTone(baseFreq, duration, 'triangle', vol); setTimeout(() => playTone(baseFreq * 1.25, duration, 'triangle', vol), interval * 1); setTimeout(() => playTone(baseFreq * 1.5, duration, 'triangle', vol), interval * 2); setTimeout(() => playTone(baseFreq * 2, duration * 1.5, 'triangle', vol), interval * 3); },
+            UI_CLICK: () => playTone(500, 25, 'sine', 0.05), // General UI click
+            // Specific toggle sounds removed as the button click sound is sufficient feedback
+            PAUSE_ON: () => playTone(350, 50, 'sine', 0.07),
+            PAUSE_OFF: () => playTone(550, 50, 'sine', 0.07),
         };
-        function playStartupSequence() {
-            const baseFreq = 300; const freqRange = 600; const beepDuration = 40; const beepVolume = 0.05; const delayBetweenBeeps = 45;
-            for (let i = 0; i < 10; i++) { setTimeout(() => { const freq = baseFreq + Math.random() * freqRange; playTone(freq, beepDuration, 'sine', beepVolume); }, i * delayBetweenBeeps); }
-        }
+        function playStartupSequence() { const baseFreq = 300; const freqRange = 600; const beepDuration = 40; const beepVolume = 0.05; const delayBetweenBeeps = 45; for (let i = 0; i < 10; i++) { setTimeout(() => { const freq = baseFreq + Math.random() * freqRange; playTone(freq, beepDuration, 'sine', beepVolume); }, i * delayBetweenBeeps); } }
 
         // --- Game Config ---
-        let width, height; 
-        const boardWidth = 10, boardHeight = 20; 
-        let blockSize = 0, boardXOffset = 0; 
-        const boardYOffset = 10; 
-        let board = [], currentPiece = null, currentRow = 0, currentCol = 0; 
-        let score = 0, gameOver = false; 
+        let width, height; const boardWidth = 10, boardHeight = 20; let blockSize = 0, boardXOffset = 0; const boardYOffset = 10; let board = [], currentPiece = null, currentRow = 0, currentCol = 0;
+        let score = 0, totalLinesCleared = 0, highScore = 0;
+        let gameOver = false;
+        let isPaused = true;
 
-        // Matrix rain state (needs to be declared before use)
         let matrixStreams = {};
 
         // --- Tetrominoes & Colors ---
-        const PIECES = [ 
-            [[1, 1, 1, 1]], 
-            [[1, 1], [1, 1]], 
-            [[0, 1, 0], [1, 1, 1]], 
-            [[0, 1, 1], [1, 1, 0]], 
-            [[1, 1, 0], [0, 1, 1]], 
-            [[1, 0, 0], [1, 1, 1]], 
-            [[0, 0, 1], [1, 1, 1]] 
-        ];
+        const PIECES = [ [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]], [[0, 1, 1], [1, 1, 0]], [[1, 1, 0], [0, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]] ];
+        const BASE_COLORS_HSL = [ [120, 60, 50], [120, 70, 40], [120, 80, 60], [120, 50, 30], [120, 90, 70], [120, 65, 45], [120, 75, 55] ];
 
-        // --- Block Colors (HSL format) ---
-        // I: #00FF00 (Lime)
-        // O: #00CC00 (Dark Green)
-        // T: #66FF66 (Light Green)
-        // S: #006600 (Forest Green)
-        // Z: #99FF99 (Mint Green)
-        // J: #33CC33 (Medium Green)
-        // L: #4DFF4D (Bright Green)
-        const BASE_COLORS_HSL = [ 
-            [120, 60, 50],  // I piece
-            [120, 70, 40],  // O piece
-            [120, 80, 60],  // T piece
-            [120, 50, 30],  // S piece
-            [120, 90, 70],  // Z piece
-            [120, 65, 45],  // J piece
-            [120, 75, 55]   // L piece
-        ];
+        // --- Settings (with defaults, loaded from localStorage) ---
+        let settings_ghostAlpha = 0.05;
+        // let settings_matrixSpawnChance = 0.07; // <-- REMOVED
+        let settings_useWireframeBlocks = false;
+        let settings_sfxEnabled = true;          // <-- ADDED SFX toggle setting
 
-        // --- Visual Settings ---
-        const BLOCK_BASE_ALPHA = 0.42;      // Base opacity of blocks
-        const GHOST_ALPHA = 0.01;           // Ghost piece opacity
-        const GHOST_COLOR = `rgba(120, 255, 120, ${GHOST_ALPHA})`;
-        const BLOCK_SHIMMER_SPEED = 0.003;   // Speed of block shimmer effect
-        const BLOCK_SHIMMER_AMOUNT = 0.1;    // Intensity of block shimmer
-        const BLOCK_FLICKER_CHANCE = 0.0005; // Chance of random block flicker
+        // --- Visual Settings (derived or constant) ---
+        const BLOCK_BASE_ALPHA = 0.42;
+        const BLOCK_SHIMMER_SPEED = 0.003;
+        const BLOCK_SHIMMER_AMOUNT = 0.1;
+        const BLOCK_FLICKER_CHANCE = 0.0005;
         const BLOCK_FLICKER_COLOR = 'rgba(255, 255, 255, 0.9)';
-        const BOARD_BACKGROUND_COLOR = 'rgba(0, 0, 0, 0.5)'; // Background color for the board area
+        const BOARD_BACKGROUND_COLOR = 'rgba(0, 0, 0, 0.5)';
 
         // --- Game Speed & Timing Settings ---
-        const initialDropInterval = 450;     // Starting time between drops (ms)
-        const minDropInterval = 100;         // Fastest possible time between drops (ms)
-        const LINES_PER_SPEED_INCREASE = 10; // Lines needed to trigger speed increase
-        const SPEED_UP_MULTIPLIER = 0.90;    // How much to multiply interval by when speeding up
-        const LOCK_DELAY_DURATION = 500;     // Time before piece locks after landing (ms) [TUNE THIS FOR 'STICKINESS']
+        const initialDropInterval = 450; let dropInterval = initialDropInterval;
+        const minDropInterval = 100; const LINES_PER_SPEED_INCREASE = 10; const SPEED_UP_MULTIPLIER = 0.90; const LOCK_DELAY_DURATION = 500;
+        let lastDropTime = 0; let lockDelayStartTime = 0; let isLockDelayActive = false; let nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
 
         // --- Matrix Background Settings ---
-        const MATRIX_GLOBAL_FADE_FACTOR = 0.15;  // Background fade rate
-        const MATRIX_BASE_SPEED = 2.5;           // Base speed of matrix rain
-        const MATRIX_SPEED_VARIATION = 8.0;      // Random variation in rain speed
-        const MATRIX_MIN_FONT_SIZE = 8;          // Smallest matrix character size
-        const MATRIX_MAX_FONT_SIZE = 18;         // Largest matrix character size
-        const MATRIX_SPAWN_CHANCE_PER_FRAME = 0.07; // Chance of new matrix column per frame
-        const MATRIX_COLUMN_WIDTH_MULTIPLIER = 0.9;  // Width of matrix columns
-        const MATRIX_TRAIL_MIN_LIGHTNESS = 18;   // Minimum brightness of matrix trail
-        const MATRIX_TRAIL_MAX_LIGHTNESS = 55;   // Maximum brightness of matrix trail
-        const MATRIX_MAIN_COLOR_HUE = 120;       // Base hue for matrix characters
+        const MATRIX_FIXED_SPAWN_CHANCE = 0.07; // <-- FIXED value instead of setting
+        const MATRIX_GLOBAL_FADE_FACTOR = 0.15; const MATRIX_BASE_SPEED = 2.5; const MATRIX_SPEED_VARIATION = 8.0; const MATRIX_MIN_FONT_SIZE = 8; const MATRIX_MAX_FONT_SIZE = 18;
+        const MATRIX_COLUMN_WIDTH_MULTIPLIER = 0.9; const MATRIX_TRAIL_MIN_LIGHTNESS = 18; const MATRIX_TRAIL_MAX_LIGHTNESS = 55; const MATRIX_MAIN_COLOR_HUE = 120;
         const MATRIX_katakana = 'ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶ';
         const MATRIX_latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-*=<>()[]!?@#$&|:.;^~_';
-        const MATRIX_characterPool = (MATRIX_katakana + MATRIX_latin).split(''); // Characters for rain
+        const MATRIX_characterPool = (MATRIX_katakana + MATRIX_latin).split('');
 
         // --- UI Settings ---
-        const INFO_BOX_WIDTH_PERCENT = 0.15;     // Width of next/hold boxes as % of screen
-        const INFO_BOX_HEIGHT_RATIO = 1.0;       // Height ratio of info boxes
-        const INFO_BOX_MARGIN = 15;              // Margin around info boxes
-        const INFO_BOX_ALPHA = 0.3;              // Opacity of info box background
-        const INFO_BOX_BORDER_ALPHA = 0.6;       // Opacity of info box border
-        const INFO_BOX_LABEL_ALPHA = 0.8;        // Opacity of info box labels
-        const MINI_PIECE_SCALE = 0.6;            // Scale of pieces in info boxes
+        const INFO_BOX_MARGIN = 5;
+        const INFO_BOX_ALPHA = 0.3; const INFO_BOX_BORDER_ALPHA = 0.6; const INFO_BOX_LABEL_ALPHA = 0.8; const MINI_PIECE_SCALE = 0.7;
+        const SETTINGS_ICON_SIZE = 30; const SETTINGS_ICON_MARGIN = 15; // Margin from screen edge (now bottom-left)
+        let settingsButtonRect = { x: 0, y: 0, width: 0, height: 0 }; // Position calculated in calculateSizes
+        let pauseMenuCloseButtonRect = { x: 0, y: 0, width: 0, height: 0 };
 
         // --- Score Display Settings ---
-        const SCORE_LINES_Y_MARGIN = 15;         // Vertical margin for score display
-        const SCORE_LINES_FONT_SIZE = 20;        // Font size for score display
-        const SCORE_GLITCH_CHANCE = 0.05;        // Chance of score text glitch
-        const SCORE_GLITCH_INTENSITY = 0.3;      // Intensity of score text glitch
-        const SCORE_GLITCH_OFFSET = 2;           // Maximum pixel offset for glitch
-        const SCORE_LINES_BG_OPACITY = 0.5;      // Background opacity of score display
-        const SCORE_LINES_BG_PADDING_X = 10;     // Horizontal padding for score display
-        const SCORE_LINES_BG_PADDING_Y = 4;      // Vertical padding for score display
-        const SCORE_LINES_GAP = 20;              // Gap between score and lines display
+        const SCORE_LINES_Y_MARGIN = 15; // Margin from screen edge (now bottom)
+        const SCORE_LINES_FONT_SIZE = 20; const SCORE_GLITCH_CHANCE = 0.05; const SCORE_GLITCH_INTENSITY = 0.3; const SCORE_GLITCH_OFFSET = 2;
+        const SCORE_LINES_BG_OPACITY = 0.5; const SCORE_LINES_BG_PADDING_X = 10; const SCORE_LINES_BG_PADDING_Y = 4; const SCORE_LINES_GAP = 25;
+        const SCORE_LABEL = "SCORE:"; const LINES_LABEL = "LINES:";
+        const SCORE_COLOR_BASE = 'hsl(120, 100%, 75%)'; const SCORE_COLOR_GLITCH = 'hsl(100, 100%, 85%)';
+        const SCORE_GLITCH_CHARS = MATRIX_characterPool;
 
         // --- Game Over Display Settings ---
-        const GAME_OVER_SCORE_FONT_SIZE = 40;    // Font size for final score
-        const GAME_OVER_TEXT_FONT_SIZE = 25;     // Font size for game over text
+        const GAME_OVER_TITLE_FONT_SIZE = 50; const GAME_OVER_STATS_FONT_SIZE = 30; const GAME_OVER_SUBTEXT_FONT_SIZE = 20;
 
-        // --- Prompt Display Settings ---
-        const PROMPT_GLITCH_CHANCE = 0.4;        // Chance of prompt text glitch
-        const PROMPT_GLITCH_INTENSITY = 0.2;     // Intensity of prompt text glitch
-        const PROMPT_JITTER_AMOUNT = 1.5;        // Amount of prompt jitter
-        const PROMPT_BORDER_FLICKER_CHANCE = 0.3; // Chance of prompt border flicker
-        const PROMPT_BORDER_FLICKER_HUE_SHIFT = 10; // Maximum hue shift for border
-        const PROMPT_BORDER_FLICKER_LIGHTNESS_SHIFT = 15; // Maximum lightness shift for border
+        // --- Pause Menu Settings ---
+        const PAUSE_MENU_BG_ALPHA = 0.85; const PAUSE_MENU_TEXT_COLOR = 'lime'; const PAUSE_MENU_TITLE_FONT_SIZE = 40; const PAUSE_MENU_ITEM_FONT_SIZE = 22; const PAUSE_MENU_VALUE_FONT_SIZE = 18;
+        const PAUSE_MENU_ITEM_GAP = 40; const PAUSE_MENU_SLIDER_WIDTH_RATIO = 0.4; const PAUSE_MENU_SLIDER_HEIGHT = 15; const PAUSE_MENU_SLIDER_HANDLE_SIZE = 20; const PAUSE_MENU_BUTTON_PADDING_X = 15; const PAUSE_MENU_BUTTON_PADDING_Y = 8;
+        const PAUSE_MENU_CLOSE_BUTTON_SIZE = 35;
+        const PAUSE_MENU_CLOSE_BUTTON_MARGIN = 15;
+        let pauseMenuElements = {};
+        let activeSlider = null;
 
         // --- Touch Control Settings ---
-        const SWIPE_THRESHOLD = 40;              // Minimum distance for swipe detection
-        const SWIPE_TIME_LIMIT = 500;            // Maximum time for swipe detection
-        const TAP_TIME_LIMIT = 280;              // Maximum time for tap detection
-        const TAP_MOVEMENT_THRESHOLD = 30;       // Maximum movement for tap detection
-        const SOFT_DROP_START_THRESHOLD = 20;    // Distance to start soft drop
-        const SOFT_DROP_MOVE_PER_PIXEL = 0.02;   // Soft drop speed multiplier
-        const HORIZONTAL_MOVE_PIXEL_THRESHOLD = 0.7; // Horizontal move sensitivity
+        const SWIPE_THRESHOLD = 40; const SWIPE_TIME_LIMIT = 500; const TAP_TIME_LIMIT = 280; const TAP_MOVEMENT_THRESHOLD = 30; const SOFT_DROP_START_THRESHOLD = 20;
+        const SOFT_DROP_MOVE_PER_PIXEL = 0.02; const HORIZONTAL_MOVE_PIXEL_THRESHOLD = 0.7;
+        let touchStartX = 0, touchStartY = 0, touchStartTime = 0; let isDraggingDown = false, isDraggingHorizontally = false; let lastSoftDropY = 0; let lastHorizontalMoveX = 0; let horizontalMoveAccumulator = 0;
+        let touchIdentifier = null;
 
-        // --- Visual Effect Durations ---
-        const FLASH_DURATION = 120;              // Duration of line clear flash
-        const SPEED_UP_FLASH_DURATION = 100;     // Duration of speed up flash
-        const TETRIS_FLASH_DURATION = 250;       // Duration of tetris clear flash
+        // --- Visual Effect Durations & Colors ---
+        const FLASH_DURATION = 120; const SPEED_UP_FLASH_DURATION = 100; const TETRIS_FLASH_DURATION = 250;
+        let flashEndTime = 0, speedUpFlashEndTime = 0, tetrisFlashEndTime = 0;
+        const FLASH_COLOR = 'rgba(180, 255, 180, 0.3)'; const SPEED_UP_FLASH_COLOR = 'rgba(255, 255, 100, 0.4)'; const TETRIS_FLASH_COLOR = 'rgba(150, 150, 255, 0.5)';
 
         // --- Next Piece & Hold Piece Config ---
         let nextPiece = null; let heldPiece = null; let canSwap = true; let nextBoxRect = { x: 0, y: 0, width: 0, height: 0 }; let holdBoxRect = { x: 0, y: 0, width: 0, height: 0 };
@@ -211,511 +162,371 @@
         const TITLE_TEXT = "TETЯIX"; const TITLE_FONT_SIZE_RATIO = 0.1; const TITLE_ALPHA = 0.15; const TITLE_COLOR = 'hsl(120, 40%, 30%)';
 
         // ===========================================
-        // HELPER FUNCTIONS (Stable)
+        // LOCAL STORAGE FUNCTIONS
+        // ===========================================
+        const LS_PREFIX = 'matrixTetris_';
+        function saveToLocalStorage(key, value) { try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); } catch (e) { console.error("LocalStorage Save Error:", e); } }
+        function loadFromLocalStorage(key, defaultValue) { try { const storedValue = localStorage.getItem(LS_PREFIX + key); return storedValue !== null ? JSON.parse(storedValue) : defaultValue; } catch (e) { console.error("LocalStorage Load Error:", e); return defaultValue; } }
+        function loadSettings() {
+            highScore = loadFromLocalStorage('highScore', 0);
+            settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
+            // settings_matrixSpawnChance removed
+            settings_useWireframeBlocks = loadFromLocalStorage('useWireframeBlocks', false);
+            settings_sfxEnabled = loadFromLocalStorage('sfxEnabled', true); // Load SFX setting
+            console.log("Settings Loaded:", { highScore, settings_ghostAlpha, /*matrixSpawnChance removed*/ settings_useWireframeBlocks, settings_sfxEnabled });
+        }
+        function saveSettings() {
+             saveToLocalStorage('highScore', highScore);
+             saveToLocalStorage('ghostAlpha', settings_ghostAlpha);
+             // settings_matrixSpawnChance removed
+             saveToLocalStorage('useWireframeBlocks', settings_useWireframeBlocks);
+             saveToLocalStorage('sfxEnabled', settings_sfxEnabled); // Save SFX setting
+        }
+        function saveHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                saveToLocalStorage('highScore', highScore);
+                console.log(`--- NEW HIGH SCORE: ${highScore} ---`);
+            }
+        }
+
+        // ===========================================
+        // HELPER FUNCTIONS
         // ===========================================
         function MATRIX_getRandomChar(pool = MATRIX_characterPool) { return pool[Math.floor(Math.random() * pool.length)]; }
         function glitchText(text, intensity = 0.1, charPool = SCORE_GLITCH_CHARS) { if (!text || text.length === 0 || charPool.length === 0) return text; return text.split('').map(char => (Math.random() < intensity && char !== ' ' && char !== ':' && char !== '\n' && char !== '<' && char !== '>') ? charPool[Math.floor(Math.random() * charPool.length)] : char).join(''); }
-        function updatePromptGlitches() { if (!promptElement || promptElement.style.display === 'none') return; if (Math.random() < PROMPT_GLITCH_CHANCE) { promptMainText.textContent = glitchText(ORIGINAL_PROMPT_MAIN, PROMPT_GLITCH_INTENSITY * 1.5); promptFullscreenText.textContent = glitchText(ORIGINAL_PROMPT_FS, PROMPT_GLITCH_INTENSITY * 0.8); promptVersionText.textContent = glitchText(ORIGINAL_PROMPT_VERSION, PROMPT_GLITCH_INTENSITY * 0.5); } else { promptMainText.textContent = ORIGINAL_PROMPT_MAIN; promptFullscreenText.textContent = ORIGINAL_PROMPT_FS; promptVersionText.textContent = ORIGINAL_PROMPT_VERSION; } const jitterX = (Math.random() - 0.5) * 2 * PROMPT_JITTER_AMOUNT; const jitterY = (Math.random() - 0.5) * 2 * PROMPT_JITTER_AMOUNT; promptElement.style.transform = `translate(-50%, -50%) translate(${jitterX}px, ${jitterY}px)`; if (Math.random() < PROMPT_BORDER_FLICKER_CHANCE) { const hueShift = (Math.random() - 0.5) * 2 * PROMPT_BORDER_FLICKER_HUE_SHIFT; const lightShift = (Math.random() - 0.5) * 2 * PROMPT_BORDER_FLICKER_LIGHTNESS_SHIFT; promptElement.style.borderColor = `hsl(${120 + hueShift}, 100%, ${50 + lightShift}%)`; } else { promptElement.style.borderColor = 'lime'; } }
+        function updatePromptGlitches() { if (!promptElement || promptElement.style.display === 'none') return; if (Math.random() < 0.4) { promptMainText.textContent = glitchText(ORIGINAL_PROMPT_MAIN, 0.2 * 1.5); promptFullscreenText.textContent = glitchText(ORIGINAL_PROMPT_FS, 0.2 * 0.8); promptVersionText.textContent = glitchText(ORIGINAL_PROMPT_VERSION, 0.2 * 0.5); } else { promptMainText.textContent = ORIGINAL_PROMPT_MAIN; promptFullscreenText.textContent = ORIGINAL_PROMPT_FS; promptVersionText.textContent = ORIGINAL_PROMPT_VERSION; } const jitterX = (Math.random() - 0.5) * 2 * 1.5; const jitterY = (Math.random() - 0.5) * 2 * 1.5; promptElement.style.transform = `translate(-50%, -50%) translate(${jitterX}px, ${jitterY}px)`; if (Math.random() < 0.3) { const hueShift = (Math.random() - 0.5) * 2 * 10; const lightShift = (Math.random() - 0.5) * 2 * 15; promptElement.style.borderColor = `hsl(${120 + hueShift}, 100%, ${50 + lightShift}%)`; } else { promptElement.style.borderColor = 'lime'; } }
         function resetPromptGlitches() { if (!promptElement) return; promptMainText.textContent = ORIGINAL_PROMPT_MAIN; promptFullscreenText.textContent = ORIGINAL_PROMPT_FS; promptVersionText.textContent = ORIGINAL_PROMPT_VERSION; promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS; promptElement.style.transform = 'translate(-50%, -50%)'; promptElement.style.borderColor = 'lime'; }
+        function isPointInRect(x, y, rect) { return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height; }
+        function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+        function resumeGame() {
+            if (!isPaused || gameOver) return;
+            isPaused = false;
+            if (gameStartTime > 0) {
+                const pauseDuration = performance.now() - (lastFrameTime || gameStartTime);
+                lastDropTime += pauseDuration;
+                if (isLockDelayActive) lockDelayStartTime += pauseDuration;
+            }
+            SOUNDS.PAUSE_OFF();
+        }
+        function pauseGame() {
+             if (isPaused || gameOver) return;
+             isPaused = true;
+             activeSlider = null;
+             SOUNDS.PAUSE_ON();
+        }
+        function togglePause() {
+             if (gameOver || gameStartTime === 0) return;
+             if (isPaused) {
+                 resumeGame();
+             } else {
+                 pauseGame();
+             }
+        }
 
         // ===========================================
-        // MATRIX BACKGROUND CODE (Stable)
+        // MATRIX BACKGROUND CODE (Uses fixed spawn chance)
         // ===========================================
         class MATRIX_Character { constructor(x, y, s, f, v, h = false) { this.x = x; this.y = y; this.speed = s; this.fontSize = f; this.value = v || MATRIX_getRandomChar(); this.isHead = h; this.alpha = h ? 1.0 : (0.3 + Math.random() * 0.5); this.hue = MATRIX_MAIN_COLOR_HUE; this.lightness = h ? 65 : MATRIX_TRAIL_MIN_LIGHTNESS + Math.random() * (MATRIX_TRAIL_MAX_LIGHTNESS - MATRIX_TRAIL_MIN_LIGHTNESS); } update() { this.y += this.speed; if (!this.isHead) this.alpha = Math.max(0.01, this.alpha - 0.01); else this.alpha = 1.0; } draw(ctx) { if (!ctx || this.alpha < 0.05 || isNaN(this.x) || isNaN(this.y)) return; const color = `hsla(${this.hue}, 85%, ${this.lightness}%, ${this.alpha})`; try { ctx.fillStyle = color; ctx.font = `${this.fontSize}px monospace`; ctx.fillText(this.value, this.x, this.y); } catch (e) {} if (!this.isHead && Math.random() < 0.015) this.value = MATRIX_getRandomChar(); } }
         class MATRIX_Stream { constructor(x,h){this.x=x;this.streamHeight=h;this.characters=[];this.baseFontSize=Math.floor(Math.random()*(MATRIX_MAX_FONT_SIZE-MATRIX_MIN_FONT_SIZE+1))+MATRIX_MIN_FONT_SIZE;this.speed=MATRIX_BASE_SPEED+Math.random()*MATRIX_SPEED_VARIATION;let iY=-this.baseFontSize*Math.floor(Math.random()*30+15);this.characters.push(new MATRIX_Character(this.x,iY,this.speed,this.baseFontSize,null,true));} spawnNewCharacter(){if(!this.characters.length){this.characters.push(new MATRIX_Character(this.x,0,this.speed,this.baseFontSize,null,true));return}const hC=this.characters[this.characters.length-1];if(!hC)return;const t=this.baseFontSize*(1.0+Math.random()*0.5);if(hC.y>t){try{const nC=new MATRIX_Character(this.x,0,this.speed,this.baseFontSize,null,true);hC.isHead=false;this.characters.push(nC);}catch(e){}}} updateAndDraw(ctx){let a=false;for(let i=this.characters.length-1;i>=0;i--){const c=this.characters[i];if(!c){this.characters.splice(i,1);continue}try{c.update();if(c.y>-this.baseFontSize*5&&c.y<this.streamHeight+this.baseFontSize*5){c.draw(ctx);a=true}if(c.y>this.streamHeight+this.baseFontSize*30||(c.y>this.streamHeight&&c.alpha<0.01)){this.characters.splice(i,1)}else{a=true}}catch(e){this.characters.splice(i,1)}}this.spawnNewCharacter();return this.characters.length===0&&!a;}}
         function MATRIX_setupStreams() { matrixStreams={};const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;const n=p>0?Math.ceil(width/p):0;for(let i=0;i<n;i++){const k=i.toString();const x=i*p+(Math.random()*p*0.5-p*0.25);if(!isNaN(x)){try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}}}}
-        function MATRIX_drawGlobalRain(ctx) { if(!ctx||!width||!height)return;let d=[];const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;const n=p>0?Math.ceil(width/p):0;for(const k in matrixStreams){if(!Object.prototype.hasOwnProperty.call(matrixStreams,k))continue;const s=matrixStreams[k];if(s){try{if(s.updateAndDraw(ctx))d.push(k);}catch(e){console.error("Stream err:",e);d.push(k);}}else{d.push(k);}}d.forEach(key=>delete matrixStreams[key]);for(let i=0;i<n;i++){const k=i.toString();if(!matrixStreams[k]&&Math.random()<MATRIX_SPAWN_CHANCE_PER_FRAME){const x=i*p+(Math.random()*p*0.5-p*0.25);if(!isNaN(x)){try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}}}}}
+        function MATRIX_drawGlobalRain(ctx) { // <-- Uses MATRIX_FIXED_SPAWN_CHANCE
+             if(!ctx||!width||!height)return;let d=[];const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;const n=p>0?Math.ceil(width/p):0;for(const k in matrixStreams){if(!Object.prototype.hasOwnProperty.call(matrixStreams,k))continue;const s=matrixStreams[k];if(s){try{if(s.updateAndDraw(ctx))d.push(k);}catch(e){console.error("Stream err:",e);d.push(k);}}else{d.push(k);}}d.forEach(key=>delete matrixStreams[key]);for(let i=0;i<n;i++){const k=i.toString();
+             if(!matrixStreams[k] && Math.random() < MATRIX_FIXED_SPAWN_CHANCE){ // <-- Use fixed value
+                 const x=i*p+(Math.random()*p*0.5-p*0.25);if(!isNaN(x)){try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}}}
+             }
+         }
 
         // ===========================================
-        // TETRIS GAME LOGIC (Updated spawnPiece, rotatePiece, movePiece)
+        // TETRIS GAME LOGIC (Stable Lock Delay Logic)
         // ===========================================
         function createBoard() { board = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0)); }
         function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
         function spawnPiece() {
-            currentPiece = nextPiece || getRandomPiece();
-            nextPiece = getRandomPiece();
-            currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2);
-            currentRow = 0; // Start at the very top row
-            canSwap = true;
-            isLockDelayActive = false; // Reset lock delay status
-            lockDelayStartTime = 0;
-
-            if (!isValidMove(currentPiece.shape, currentRow, currentCol)) {
-                // *** Check if the spawn position itself is invalid (game over condition) ***
-                console.error(`!!! GAME OVER ON SPAWN !!! Piece type: ${currentPiece.colorIndex}, Position: R=${currentRow}, C=${currentCol}. Board state might be invalid.`); // Added log
-                gameOver = true;
-                isPaused = true;
-                SOUNDS.GAME_OVER();
-                // Optionally display a more specific game over message if possible
-            } else {
-                 // Piece spawned successfully
-                 lastDropTime = performance.now(); // Reset drop timer only on successful spawn
-            }
+            currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0;
+            if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.error(`!!! GAME OVER ON SPAWN !!!`); } else { lastDropTime = performance.now(); }
         }
         function rotateMatrix(matrix) { const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[x][r-1-y]=1;}}return n; }
         function rotatePiece() {
             if (!currentPiece || isPaused || gameOver) return;
-            const originalShape = currentPiece.shape;
-            const rotatedShape = rotateMatrix(originalShape);
-            const kicks = [0, -1, 1, -2, 2]; // Standard kicks
-
+            const originalShape = currentPiece.shape; const rotatedShape = rotateMatrix(originalShape); const kicks = [0, -1, 1, -2, 2];
             for (const kick of kicks) {
                 if (isValidMove(rotatedShape, currentRow, currentCol + kick)) {
-                    currentPiece.shape = rotatedShape;
-                    currentCol += kick;
-                    SOUNDS.ROTATE();
-                    // *** DO NOT reset lock delay timer on rotation ***
-                    // if (isLockDelayActive) { lockDelayStartTime = performance.now(); } // REMOVED
-                    return; // Rotation successful
+                    const originalLockState = isLockDelayActive; currentPiece.shape = rotatedShape; currentCol += kick; SOUNDS.ROTATE();
+                    if (originalLockState && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; }
+                    // No timer reset on rotation during lock delay
+                    return;
                 }
             }
-            // If loop finishes without returning, rotation failed
         }
-        function isValidMove(shape, r, c) {
-            for(let y=0; y<shape.length; y++) {
-                for(let x=0; x<shape[y].length; x++) {
-                    if(shape[y][x]) {
-                        let bR = r + y; // Board Row
-                        let bC = c + x; // Board Column
-                        // Check boundaries and collision with existing blocks
-                        if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || board[bR][bC] !== 0) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true; // Valid move
-        }
+        function isValidMove(shape, r, c) { for(let y=0; y<shape.length; y++) { for(let x=0; x<shape[y].length; x++) { if(shape[y][x]) { let bR = r + y; let bC = c + x; if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) return false; } } } return true; }
         function movePiece(deltaX, deltaY) {
             if (!currentPiece || isPaused || gameOver) return { moved: false, needsLock: false };
-
-            // Prevent downward movement if lock delay is active
-            if (deltaY > 0 && isLockDelayActive) {
-                return { moved: false, needsLock: true }; // Indicate lock should happen
-            }
-
+            if (deltaY > 0 && isLockDelayActive) return { moved: false, needsLock: true };
             if (isValidMove(currentPiece.shape, currentRow + deltaY, currentCol + deltaX)) {
-                currentCol += deltaX;
-                currentRow += deltaY;
-
-                // If piece moved horizontally *during* lock delay, check if it can now fall.
-                // If it can, just cancel the lock delay. Auto-drop will resume naturally.
-                if (deltaX !== 0 && isLockDelayActive) {
-                    if (isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
-                        isLockDelayActive = false; // Cancel lock delay, allows falling
-                        // REMOVED: lastDropTime = performance.now() - (dropInterval + 1);
-                        // console.log("Lock delay cancelled by horizontal slide."); // Optional log
-                    }
-                    // If it still can't fall, the lock delay continues as normal.
-                }
-                // If piece moved down, cancel any active lock delay anyway
-                else if (deltaY > 0) {
-                    isLockDelayActive = false;
-                }
-
-                // Check if the piece needs to lock *after* the move (only relevant for downward moves)
-                const needsLock = deltaY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol);
-                return { moved: true, needsLock: needsLock };
+                const originalLockState = isLockDelayActive; currentCol += deltaX; currentRow += deltaY;
+                if (deltaY > 0) { isLockDelayActive = false; }
+                else if (deltaX !== 0 && originalLockState && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; }
+                // No timer reset on horizontal move during lock delay
+                const needsLock = deltaY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol); return { moved: true, needsLock: needsLock };
             }
-
-            // If the move failed, check if it failed because it needed to lock (tried moving down)
-            if (deltaY > 0 && !isLockDelayActive) {
-                // Check if the piece *cannot* move down from its current position
-                if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
-                    return { moved: false, needsLock: true }; // Indicate lock should start
-                }
-            }
-
-            // Move failed for other reasons (e.g., horizontal collision, already at bottom)
+            if (deltaY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { return { moved: false, needsLock: true }; } }
             return { moved: false, needsLock: false };
         }
         function hardDrop() {
-            if (!currentPiece || isPaused || gameOver) return;
-
-            // If lock delay is already active, just lock it immediately
-            if (isLockDelayActive) {
-                lockPiece();
-                return;
-            }
-
+            if (!currentPiece || isPaused || gameOver) return; if (isLockDelayActive) { lockPiece(); return; }
             const ghostR = calculateGhostPosition();
-            if (ghostR > currentRow) {
-                SOUNDS.HARD_DROP();
-                currentRow = ghostR;
-                // Immediately trigger lock delay upon landing from hard drop
-                // (or just lock it instantly - common variation) Let's trigger delay.
-                isLockDelayActive = true;
-                lockDelayStartTime = performance.now();
-            } else {
-                // If ghost is at current row, it means it can't move down, so check if lock delay should start
-                if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
-                    if (!isLockDelayActive) {
-                        isLockDelayActive = true;
-                        lockDelayStartTime = performance.now();
-                    }
-                } else {
-                    // This case (ghostR == currentRow but can move down) shouldn't happen,
-                    // but if it does, just lock the piece.
-                    lockPiece();
-                }
-            }
+            if (ghostR > currentRow) { SOUNDS.HARD_DROP(); currentRow = ghostR; if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } } else { lockPiece(); } }
+            else { if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } else { lockPiece(); } } else { lockPiece(); } }
         }
         function softDrop() {
-            if (!currentPiece || isPaused || gameOver) return false;
-            if (isLockDelayActive) { return false; } // Cannot soft drop during lock phase
-
+            if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false;
             const moveResult = movePiece(0, 1);
-
-            if (moveResult.moved) {
-                SOUNDS.SOFT_DROP();
-                lastDropTime = performance.now(); // Reset auto-drop timer
-                score += 1; // Score for soft dropping
-                return true;
-            } else if (moveResult.needsLock) {
-                // Failed to move down, start lock delay if not already active
-                if (!isLockDelayActive) {
-                    isLockDelayActive = true;
-                    lockDelayStartTime = performance.now();
-                }
-                return false;
-            }
-            return false; // Move failed for other reasons
+            if (moveResult.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; }
+            else if (moveResult.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false;
         }
         function lockPiece() {
-            if(!currentPiece) return;
-
-            isLockDelayActive = false; // Turn off lock delay
-            lockDelayStartTime = 0;
-            let pieceLanded = false;
-
-            for(let y=0; y<currentPiece.shape.length; y++) {
-                for(let x=0; x<currentPiece.shape[y].length; x++) {
-                    if(currentPiece.shape[y][x]) {
-                        let bR = currentRow + y;
-                        let bC = currentCol + x;
-                        // Check if block is within bounds BEFORE accessing board array
-                        if (bC >= 0 && bC < boardWidth && bR < boardHeight) {
-                             if (bR < 0) {
-                                 // Piece locked entirely or partially above the visible board
-                                 gameOver = true; // Game over condition
-                                 // No need to place blocks if it's game over this way
-                             } else {
-                                 // Place block on the board
-                                 board[bR][bC] = currentPiece.colorIndex + 1;
-                                 pieceLanded = true;
-                             }
-                        }
-                        // If bC or bR are out of bounds but not above board,
-                        // it implies an invalid state, but game over likely already triggered
-                    }
-                }
-            }
-
-            // Check game over *after* trying to place blocks
-            if (gameOver) {
-                isPaused = true;
-                SOUNDS.GAME_OVER();
-                console.log("GAME OVER (Detected in lockPiece)");
-                currentPiece = null; // Clear current piece
-                return; // Stop further processing
-            }
-
-            if (pieceLanded) { // Only play sound and clear lines if placement happened
-                 SOUNDS.LAND();
-                 const lines = clearLines(); // Check for and clear completed lines
-            } else {
-                // This case (locking without landing any blocks inside bounds)
-                // might indicate an issue or edge case, potentially game over handled above.
-                console.warn("lockPiece called but no blocks landed within bounds?");
-            }
-
-            // Spawn the next piece (only if not game over)
-            spawnPiece();
-            // lastDropTime=performance.now(); // Resetting drop timer moved to spawnPiece success case
+            if(!currentPiece || isPaused || gameOver) return; isLockDelayActive = false; lockDelayStartTime = 0; let pieceLanded = false;
+            for(let y=0; y<currentPiece.shape.length; y++) { for(let x=0; x<currentPiece.shape[y].length; x++) { if(currentPiece.shape[y][x]) { let bR = currentRow + y; let bC = currentCol + x; if (bC >= 0 && bC < boardWidth && bR < boardHeight) { if (bR < 0) { gameOver = true; break; } else { board[bR][bC] = currentPiece.colorIndex + 1; pieceLanded = true; } } } } if(gameOver) break; }
+            if (gameOver) { isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (lockPiece)"); currentPiece = null; return; }
+            if (pieceLanded) { SOUNDS.LAND(); clearLines(); } else { console.warn("lockPiece called but no blocks landed?"); } spawnPiece();
         }
         function clearLines() {
-            let cleared = 0;
-            let rowsToClear = [];
-            for (let r = boardHeight - 1; r >= 0; r--) {
-                if (board[r].every(c => c !== 0)) {
-                    cleared++;
-                    rowsToClear.push(r);
-                }
-            }
-            // Sort for potentially more predictable visual removal, though splice handles indices ok
-            rowsToClear.sort((a, b) => a - b);
-            // Remove rows from highest index down to avoid shifting issues
-            for (let i = rowsToClear.length - 1; i >= 0; i--) {
-                 board.splice(rowsToClear[i], 1);
-            }
-            // Add new empty rows at the top
-            for (let i = 0; i < cleared; i++) {
-                board.unshift(Array(boardWidth).fill(0));
-            }
-
-            if (cleared > 0) {
-                score += cleared * 100 * cleared; // Simple scoring
-                totalLinesCleared += cleared;
-
-                if (cleared === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; }
-                else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; }
-
-                while (totalLinesCleared >= nextSpeedUpMilestone) {
-                    dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER);
-                    nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE;
-                    console.log(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`);
-                    speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION;
-                }
-            }
-            return cleared;
+            let cleared = 0; let rowsToClear = [];
+            for (let r = boardHeight - 1; r >= 0; r--) { if (board[r].every(c => c !== 0)) { cleared++; rowsToClear.push(r); } }
+            rowsToClear.sort((a, b) => a - b); for (let i = rowsToClear.length - 1; i >= 0; i--) { board.splice(rowsToClear[i], 1); } for (let i = 0; i < cleared; i++) { board.unshift(Array(boardWidth).fill(0)); }
+            if (cleared > 0) { score += cleared * 100 * cleared; totalLinesCleared += cleared; if (cleared === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; } else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; }
+                while (totalLinesCleared >= nextSpeedUpMilestone) { dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER); nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE; console.log(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`); speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION; } } return cleared;
         }
         function calculateGhostPosition() { if(!currentPiece||gameOver)return currentRow;let ghostR=currentRow;while(isValidMove(currentPiece.shape,ghostR+1,currentCol))ghostR++;return ghostR;}
-        function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; SOUNDS.GAME_OVER(); console.log("GAME OVER (Caused by Swap)"); currentPiece = null; } } canSwap = false; // Prevent swapping again until next piece
-            // Don't reset lastDropTime here, let spawnPiece handle it
-            // lastDropTime = performance.now();
-        }
+        function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (Swap)"); currentPiece = null; } } canSwap = false; }
 
         // ===========================================
         // DRAWING FUNCTIONS (Stable)
         // ===========================================
-        function drawBlock(r, c, ci, g = false, t = performance.now(), isMini = false, miniBlockSize = blockSize) { const size = isMini ? miniBlockSize : blockSize; if (size <= 0) return; let a = g ? GHOST_ALPHA : BLOCK_BASE_ALPHA; let fC; const shimmerFactor = Math.sin(t * BLOCK_SHIMMER_SPEED + r + c * 0.5) * BLOCK_SHIMMER_AMOUNT; const currentAlpha = Math.max(g ? GHOST_ALPHA : 0.05, Math.min(1.0, a + (g ? 0 : shimmerFactor))); if (g) { fC = `rgba(120, 255, 120, ${GHOST_ALPHA})`; } else { const [h, s, l] = BASE_COLORS_HSL[ci]; fC = `hsla(${h}, ${s}%, ${l}%, ${currentAlpha})`; } let shouldFlicker = false; if (!g && !isMini && Math.random() < BLOCK_FLICKER_CHANCE) { fC = BLOCK_FLICKER_COLOR; shouldFlicker = true; } ctx.fillStyle = fC; const x = (isMini ? 0 : boardXOffset) + c * size; const y = (isMini ? 0 : boardYOffset) + r * size; ctx.fillRect(x, y, size, size); if (!isMini) { ctx.strokeStyle = shouldFlicker ? 'rgba(100, 255, 100, 0.5)' : (g ? `rgba(200, 255, 200, ${GHOST_ALPHA * 3.5})` : `rgba(0, 0, 0, ${currentAlpha * 0.6})`); ctx.lineWidth = g ? 0.5 : 1; ctx.strokeRect(x + (g ? 0.25 : 0), y + (g ? 0.25 : 0), size - (g ? 0.5 : 0), size - (g ? 0.5 : 0)); } else { ctx.strokeStyle = `rgba(200, 255, 200, ${currentAlpha * 0.3})`; ctx.lineWidth = 0.5; ctx.strokeRect(x+0.5, y+0.5, size-1, size-1); } }
+        function drawBlock(r, c, ci, g = false, t = performance.now(), isMini = false, miniBlockSize = blockSize) {
+            const size = isMini ? miniBlockSize : blockSize; if (size <= 0) return; let a = g ? settings_ghostAlpha : BLOCK_BASE_ALPHA; let fC; const shimmerFactor = Math.sin(t * BLOCK_SHIMMER_SPEED + r + c * 0.5) * BLOCK_SHIMMER_AMOUNT; const currentAlpha = Math.max(g ? settings_ghostAlpha : 0.05, Math.min(1.0, a + (g ? 0 : shimmerFactor)));
+            if (g) { fC = `rgba(120, 255, 120, ${settings_ghostAlpha})`; } else { const [h, s, l] = BASE_COLORS_HSL[ci]; fC = `hsla(${h}, ${s}%, ${l}%, ${currentAlpha})`; } let shouldFlicker = false; if (!g && !isMini && Math.random() < BLOCK_FLICKER_CHANCE) { fC = BLOCK_FLICKER_COLOR; shouldFlicker = true; } ctx.fillStyle = fC;
+            const x = (isMini ? 0 : boardXOffset) + c * size; const y = (isMini ? 0 : boardYOffset) + r * size;
+            if (settings_useWireframeBlocks && !g && !isMini) { ctx.strokeStyle = fC; ctx.lineWidth = 1.5; ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, size - ctx.lineWidth, size - ctx.lineWidth); } else { ctx.fillRect(x, y, size, size); }
+            if (!isMini && !settings_useWireframeBlocks) { ctx.strokeStyle = shouldFlicker ? 'rgba(100, 255, 100, 0.5)' : (g ? `rgba(200, 255, 200, ${settings_ghostAlpha * 3.5})` : `rgba(0, 0, 0, ${currentAlpha * 0.6})`); ctx.lineWidth = g ? 0.5 : 1; ctx.strokeRect(x + (g ? 0.25 : 0), y + (g ? 0.25 : 0), size - (g ? 0.5 : 0), size - (g ? 0.5 : 0)); }
+            else if (isMini) { ctx.strokeStyle = `rgba(200, 255, 200, ${currentAlpha * 0.3})`; ctx.lineWidth = 0.5; ctx.strokeRect(x+0.5, y+0.5, size-1, size-1); }
+        }
         function drawBoard(timestamp){if(blockSize<=0)return;for(let r=0;r<boardHeight;r++){for(let c=0;c<boardWidth;c++){if(board[r][c]!==0)drawBlock(r,c,board[r][c]-1,false,timestamp);}}ctx.strokeStyle=`hsla(120,50%,20%,${BLOCK_BASE_ALPHA})`;ctx.lineWidth=2;ctx.strokeRect(boardXOffset,boardYOffset,boardWidth*blockSize,boardHeight*blockSize);}
         function drawPiece(shape, r, c, ci, g = false, t){if(blockSize<=0)return;for(let y=0;y<shape.length;y++){for(let x=0;x<shape[y].length;x++){if(shape[y][x])drawBlock(r+y,c+x,ci,g,t);}}}
-        function drawMiniPiece(piece, boxRect, timestamp) { if (!piece || !ctx || boxRect.width <= 0) return; const shape = piece.shape; const colorIndex = piece.colorIndex; const pieceHeight = shape.length; const pieceWidth = shape.length > 0 ? shape[0].length : 0; if(pieceWidth === 0) return; const maxDim = Math.max(pieceWidth, pieceHeight, 2); const availableWidth = boxRect.width * MINI_PIECE_SCALE; const availableHeight = boxRect.height * MINI_PIECE_SCALE; const miniBlockSize = Math.max(1, Math.floor(Math.min(availableWidth / maxDim, availableHeight / maxDim))); if (miniBlockSize <= 1) return; const totalPieceWidth = pieceWidth * miniBlockSize; const totalPieceHeight = pieceHeight * miniBlockSize; const startX = boxRect.x + (boxRect.width - totalPieceWidth) / 2; const startY = boxRect.y + (boxRect.height - totalPieceHeight) / 2; ctx.save(); ctx.translate(startX, startY); for (let y = 0; y < pieceHeight; y++) { for (let x = 0; x < pieceWidth; x++) { if (shape[y][x]) { drawBlock(y, x, colorIndex, false, timestamp, true, miniBlockSize); } } } ctx.restore(); }
-        function drawInfoBoxes(timestamp) { if (!ctx || blockSize <= 0) return; const boxColor = `rgba(0, 40, 0, ${INFO_BOX_ALPHA})`; const borderColor = `hsla(120, 70%, 50%, ${INFO_BOX_BORDER_ALPHA})`; const labelColor = `hsla(120, 80%, 70%, ${INFO_BOX_LABEL_ALPHA})`; const labelFont = `${Math.max(10, Math.floor(blockSize * 0.6))}px monospace`; ctx.fillStyle = boxColor; ctx.fillRect(nextBoxRect.x, nextBoxRect.y, nextBoxRect.width, nextBoxRect.height); ctx.strokeStyle = borderColor; ctx.lineWidth = 1; ctx.strokeRect(nextBoxRect.x, nextBoxRect.y, nextBoxRect.width, nextBoxRect.height); ctx.fillStyle = labelColor; ctx.font = labelFont; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText("Next", nextBoxRect.x + nextBoxRect.width / 2, nextBoxRect.y + 5); if (nextPiece) { drawMiniPiece(nextPiece, nextBoxRect, timestamp); } ctx.fillStyle = boxColor; ctx.fillRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); ctx.strokeStyle = borderColor; ctx.strokeRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); ctx.fillStyle = labelColor; ctx.fillText("Hold", holdBoxRect.x + holdBoxRect.width / 2, holdBoxRect.y + 5); if (heldPiece) { drawMiniPiece(heldPiece, holdBoxRect, timestamp); } if (!canSwap) { ctx.fillStyle = 'rgba(100, 0, 0, 0.4)'; ctx.fillRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); } ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
-        function drawGame(timestamp){
-            if (!ctx || blockSize <= 0) return;
-            // Draw semi-transparent background for the play area
-            ctx.fillStyle = BOARD_BACKGROUND_COLOR;
-            ctx.fillRect(boardXOffset, boardYOffset, boardWidth * blockSize, boardHeight * blockSize);
-            // Draw the board (blocks already placed)
-            drawBoard(timestamp);
-            // Draw the current piece, ghost, etc.
-            if (currentPiece && !gameOver) {
-                const ghostR = calculateGhostPosition();
-                if (ghostR > currentRow) { drawPiece(currentPiece.shape, ghostR, currentCol, currentPiece.colorIndex, true, timestamp); }
-                drawPiece(currentPiece.shape, currentRow, currentCol, currentPiece.colorIndex, false, timestamp);
-            }
-        }
-        function drawScoreAndLines() { if (!ctx || !width) return; const displayFont = `bold ${SCORE_LINES_FONT_SIZE}px monospace`; ctx.font = displayFont; let scoreStr = `${SCORE_LABEL}${score.toString().padStart(6,'0')}`; let linesStr = `${LINES_LABEL}${totalLinesCleared.toString().padStart(3,'0')}`; let displayScoreStr = scoreStr; let displayLinesStr = linesStr; let displayColor = SCORE_COLOR_BASE; let offsetX = 0, offsetY = 0; if (Math.random() < SCORE_GLITCH_CHANCE) { displayScoreStr = glitchText(scoreStr, SCORE_GLITCH_INTENSITY, SCORE_GLITCH_CHARS); displayLinesStr = glitchText(linesStr, SCORE_GLITCH_INTENSITY, SCORE_GLITCH_CHARS); displayColor = SCORE_COLOR_GLITCH; offsetX = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; offsetY = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; } const scoreMetrics = ctx.measureText(displayScoreStr); const linesMetrics = ctx.measureText(displayLinesStr); const totalTextWidth = scoreMetrics.width + SCORE_LINES_GAP + linesMetrics.width; const textHeight = SCORE_LINES_FONT_SIZE; const bgWidth = totalTextWidth + SCORE_LINES_BG_PADDING_X * 2; const bgHeight = textHeight + SCORE_LINES_BG_PADDING_Y * 2; const bgX = width / 2 - bgWidth / 2; const bgY = SCORE_LINES_Y_MARGIN - SCORE_LINES_BG_PADDING_Y; ctx.fillStyle = `rgba(0, 0, 0, ${SCORE_LINES_BG_OPACITY})`; ctx.fillRect(bgX, bgY, bgWidth, bgHeight); ctx.font = displayFont; ctx.fillStyle = displayColor; ctx.textBaseline = 'top'; const drawY = SCORE_LINES_Y_MARGIN + offsetY; const scoreX = bgX + SCORE_LINES_BG_PADDING_X + offsetX; ctx.textAlign = 'left'; try { ctx.fillText(displayScoreStr, scoreX, drawY); } catch(e) {} const linesX = bgX + bgWidth - SCORE_LINES_BG_PADDING_X + offsetX; ctx.textAlign = 'right'; try { ctx.fillText(displayLinesStr, linesX, drawY); } catch(e) {} ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
-        function drawGameOverScreen(){if(!ctx||!width||!height)return;ctx.font=`bold ${GAME_OVER_SCORE_FONT_SIZE}px monospace`;ctx.fillStyle=SCORE_COLOR_GLITCH;ctx.textAlign='center';ctx.textBaseline='middle';let sStr=score.toString();let dStr=glitchText(sStr,SCORE_GLITCH_INTENSITY*1.5);ctx.fillText(dStr,width/2,height/2);ctx.font=`${GAME_OVER_TEXT_FONT_SIZE}px monospace`;ctx.fillStyle='red';ctx.fillText("GAME OVER",width/2,height/2-GAME_OVER_SCORE_FONT_SIZE*1.2);ctx.fillStyle='white';ctx.fillText("Tap or Press Enter to Restart",width/2,height/2+GAME_OVER_SCORE_FONT_SIZE*0.8);ctx.textAlign='left';}
+        function drawMiniPiece(piece, boxRect, timestamp) {
+             if (!piece || !ctx || boxRect.width <= 0 || boxRect.height <= 0) return; const shape = piece.shape; const colorIndex = piece.colorIndex; const pieceHeight = shape.length; const pieceWidth = shape.length > 0 ? shape[0].length : 0; if(pieceWidth === 0) return; const maxDim = Math.max(pieceWidth, pieceHeight); const availableWidth = boxRect.width * MINI_PIECE_SCALE; const availableHeight = boxRect.height * MINI_PIECE_SCALE; const miniBlockSize = Math.max(1, Math.floor(Math.min(availableWidth / maxDim, availableHeight / maxDim))); if (miniBlockSize <= 1) return;
+             const totalPieceWidth = pieceWidth * miniBlockSize; const totalPieceHeight = pieceHeight * miniBlockSize; const startX = boxRect.x + (boxRect.width - totalPieceWidth) / 2; const startY = boxRect.y + (boxRect.height - totalPieceHeight) / 2;
+             ctx.save(); ctx.translate(startX, startY); for (let y = 0; y < pieceHeight; y++) { for (let x = 0; x < pieceWidth; x++) { if (shape[y][x]) { drawBlock(y, x, colorIndex, false, timestamp, true, miniBlockSize); } } } ctx.restore();
+         }
+        function drawInfoBoxes(timestamp) {
+             if (!ctx || blockSize <= 0 || holdBoxRect.width <= 0 || nextBoxRect.width <= 0) return; const boxColor = `rgba(0, 40, 0, ${INFO_BOX_ALPHA})`; const borderColor = `hsla(120, 70%, 50%, ${INFO_BOX_BORDER_ALPHA})`; const labelColor = `hsla(120, 80%, 70%, ${INFO_BOX_LABEL_ALPHA})`; const labelFont = `${Math.max(10, Math.floor(blockSize * 0.5))}px monospace`;
+             ctx.font = labelFont; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+             ctx.fillStyle = boxColor; ctx.fillRect(nextBoxRect.x, nextBoxRect.y, nextBoxRect.width, nextBoxRect.height); ctx.strokeStyle = borderColor; ctx.lineWidth = 1; ctx.strokeRect(nextBoxRect.x, nextBoxRect.y, nextBoxRect.width, nextBoxRect.height); ctx.fillStyle = labelColor; ctx.fillText("Next", nextBoxRect.x + nextBoxRect.width / 2, nextBoxRect.y + 3); if (nextPiece) { drawMiniPiece(nextPiece, nextBoxRect, timestamp); }
+             ctx.fillStyle = boxColor; ctx.fillRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); ctx.strokeStyle = borderColor; ctx.strokeRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); ctx.fillStyle = labelColor; ctx.fillText("Hold", holdBoxRect.x + holdBoxRect.width / 2, holdBoxRect.y + 3); if (heldPiece) { drawMiniPiece(heldPiece, holdBoxRect, timestamp); } if (!canSwap) { ctx.fillStyle = 'rgba(100, 0, 0, 0.4)'; ctx.fillRect(holdBoxRect.x, holdBoxRect.y, holdBoxRect.width, holdBoxRect.height); }
+             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+         }
+        function drawGame(timestamp){ if (!ctx || blockSize <= 0) return; ctx.fillStyle = BOARD_BACKGROUND_COLOR; ctx.fillRect(boardXOffset, boardYOffset, boardWidth * blockSize, boardHeight * blockSize); drawBoard(timestamp); if (currentPiece && !gameOver) { const ghostR = calculateGhostPosition(); if (ghostR > currentRow) { drawPiece(currentPiece.shape, ghostR, currentCol, currentPiece.colorIndex, true, timestamp); } drawPiece(currentPiece.shape, currentRow, currentCol, currentPiece.colorIndex, false, timestamp); } }
+        function drawScoreAndLines() { // <-- UPDATED position (bottom-center)
+             if (!ctx || !width || !height) return;
+             const displayFont = `bold ${SCORE_LINES_FONT_SIZE}px monospace`;
+             ctx.font = displayFont;
+             let scoreStr = `${SCORE_LABEL} ${score.toString().padStart(6,'0')}`;
+             let linesStr = `${LINES_LABEL} ${totalLinesCleared.toString().padStart(3,'0')}`;
+             let displayScoreStr = scoreStr; let displayLinesStr = linesStr; let displayColor = SCORE_COLOR_BASE;
+             let offsetX = 0, offsetY = 0;
+             if (Math.random() < SCORE_GLITCH_CHANCE) { displayScoreStr = glitchText(scoreStr, SCORE_GLITCH_INTENSITY); displayLinesStr = glitchText(linesStr, SCORE_GLITCH_INTENSITY); displayColor = SCORE_COLOR_GLITCH; offsetX = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; offsetY = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; }
+             const scoreMetrics = ctx.measureText(displayScoreStr); const linesMetrics = ctx.measureText(displayLinesStr); const totalTextWidth = scoreMetrics.width + SCORE_LINES_GAP + linesMetrics.width; const textHeight = SCORE_LINES_FONT_SIZE;
+             const bgWidth = totalTextWidth + SCORE_LINES_BG_PADDING_X * 2; const bgHeight = textHeight + SCORE_LINES_BG_PADDING_Y * 2;
+             const bgX = width / 2 - bgWidth / 2;
+             // Position near bottom edge
+             const bgY = height - bgHeight - SCORE_LINES_Y_MARGIN;
+             const drawY = bgY + SCORE_LINES_BG_PADDING_Y + offsetY;
+
+             ctx.fillStyle = `rgba(0, 0, 0, ${SCORE_LINES_BG_OPACITY})`; ctx.fillRect(bgX, bgY, bgWidth, bgHeight); ctx.strokeStyle = 'rgba(100, 255, 100, 0.3)'; ctx.lineWidth = 0.5; ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
+             ctx.font = displayFont; ctx.fillStyle = displayColor; ctx.textBaseline = 'top';
+             const scoreX = bgX + SCORE_LINES_BG_PADDING_X + offsetX; ctx.textAlign = 'left'; try { ctx.fillText(displayScoreStr, scoreX, drawY); } catch(e) {}
+             const linesX = bgX + bgWidth - SCORE_LINES_BG_PADDING_X + offsetX; ctx.textAlign = 'right'; try { ctx.fillText(displayLinesStr, linesX, drawY); } catch(e) {}
+             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+         }
+        function drawGameOverScreen(){ if(!ctx||!width||!height)return; const centerX = width / 2; const centerY = height / 2; ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; ctx.fillRect(0, 0, width, height); ctx.font = `bold ${GAME_OVER_TITLE_FONT_SIZE}px monospace`; ctx.fillStyle = 'red'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(glitchText("GAME OVER", 0.1), centerX, centerY - 60); ctx.font = `bold ${GAME_OVER_STATS_FONT_SIZE}px monospace`; ctx.fillStyle = SCORE_COLOR_GLITCH; ctx.textBaseline = 'top'; let scoreStr = score.toString(); let displayScoreStr = glitchText(scoreStr, SCORE_GLITCH_INTENSITY * 1.5); ctx.fillText(`Score: ${displayScoreStr}`, centerX, centerY - 10); let linesStr = totalLinesCleared.toString(); let displayLinesStr = glitchText(linesStr, SCORE_GLITCH_INTENSITY * 1.2); ctx.fillText(`Lines: ${displayLinesStr}`, centerX, centerY + GAME_OVER_STATS_FONT_SIZE + 5); if (highScore > 0) { ctx.font = `${GAME_OVER_SUBTEXT_FONT_SIZE}px monospace`; ctx.fillStyle = 'hsl(120, 80%, 60%)'; ctx.fillText(`High Score: ${highScore}`, centerX, centerY + GAME_OVER_STATS_FONT_SIZE * 2 + 20); } ctx.font = `${GAME_OVER_SUBTEXT_FONT_SIZE}px monospace`; ctx.fillStyle = 'white'; ctx.fillText("Tap or Press Enter to Restart", centerX, centerY + GAME_OVER_STATS_FONT_SIZE * 2 + 60); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
         function drawTitle() { if (!ctx || !width || !height) return; const fontSize = Math.floor(height * TITLE_FONT_SIZE_RATIO); ctx.font = `bold ${fontSize}px monospace`; ctx.fillStyle = TITLE_COLOR; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const titleX = width / 2 + (Math.random() - 0.5) * 4; const titleY = height / 2 + (Math.random() - 0.5) * 4; let titleToDraw = TITLE_TEXT; if (Math.random() < 0.03) { titleToDraw = glitchText(TITLE_TEXT, 0.2, ['#', '*', '!', '?']); } ctx.fillText(titleToDraw, titleX, titleY); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
+        function drawSettingsIcon() { // Positioned by settingsButtonRect (now bottom-left)
+            if (!ctx || isPaused || gameOver) return;
+            const x = settingsButtonRect.x; const y = settingsButtonRect.y; const size = settingsButtonRect.width; const halfSize = size / 2; const centerX = x + halfSize; const centerY = y + halfSize; const innerR = size * 0.2; const outerR = size * 0.4; const teeth = 8; const toothDepth = size * 0.1;
+            ctx.strokeStyle = 'rgba(150, 255, 150, 0.7)'; ctx.fillStyle = 'rgba(50, 150, 50, 0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(centerX, centerY, innerR, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); for (let i = 0; i < teeth; i++) { const angle = (i / teeth) * Math.PI * 2; const nextAngle = ((i + 0.5) / teeth) * Math.PI * 2; const angleToothEnd = ((i+1)/teeth) * Math.PI * 2; const x1 = centerX + Math.cos(angle) * outerR; const y1 = centerY + Math.sin(angle) * outerR; const xTooth = centerX + Math.cos(nextAngle) * (outerR + toothDepth); const yTooth = centerY + Math.sin(nextAngle) * (outerR + toothDepth); const x2 = centerX + Math.cos(angleToothEnd) * outerR; const y2 = centerY + Math.sin(angleToothEnd) * outerR; if (i === 0) ctx.moveTo(x1, y1); else ctx.lineTo(x1, y1); ctx.lineTo(xTooth, yTooth); ctx.lineTo(x2, y2); } ctx.closePath(); ctx.stroke(); ctx.fill();
+        }
+        function drawPauseMenu() { // <-- UPDATED: Removed Density Slider, Added SFX Toggle
+            if (!ctx || !width || !height) return;
+            ctx.fillStyle = `rgba(0, 15, 0, ${PAUSE_MENU_BG_ALPHA})`; ctx.fillRect(0, 0, width, height); ctx.strokeStyle = 'rgba(100, 255, 100, 0.5)'; ctx.lineWidth = 1; ctx.strokeRect(2, 2, width - 4, height - 4);
+            const centerX = width / 2; let currentY = height * 0.2;
+            ctx.font = `bold ${PAUSE_MENU_TITLE_FONT_SIZE}px monospace`; ctx.fillStyle = PAUSE_MENU_TEXT_COLOR; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("|| PAUSED ||", centerX, currentY); currentY += PAUSE_MENU_TITLE_FONT_SIZE * 1.5;
+            pauseMenuElements = {}; ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            const itemStartX = centerX - (width * PAUSE_MENU_SLIDER_WIDTH_RATIO / 2); const valueStartX = centerX + (width * PAUSE_MENU_SLIDER_WIDTH_RATIO / 2); const sliderWidth = width * PAUSE_MENU_SLIDER_WIDTH_RATIO;
+
+            // 1. Ghost Brightness Slider
+            let itemY = currentY; ctx.fillStyle = PAUSE_MENU_TEXT_COLOR; ctx.fillText("Ghost Alpha:", itemStartX, itemY);
+            const sliderRect = { x: itemStartX, y: itemY + PAUSE_MENU_ITEM_FONT_SIZE * 0.8, width: sliderWidth, height: PAUSE_MENU_SLIDER_HEIGHT };
+            ctx.fillStyle = 'rgba(100, 255, 100, 0.3)'; ctx.fillRect(sliderRect.x, sliderRect.y, sliderRect.width, sliderRect.height);
+            const minAlpha = 0.01; const maxAlpha = 0.10; const alphaRange = maxAlpha - minAlpha; const handleRatio = alphaRange > 0 ? clamp((settings_ghostAlpha - minAlpha) / alphaRange, 0, 1) : 0.5;
+            const handleX = sliderRect.x + handleRatio * sliderRect.width; const handleY = sliderRect.y + PAUSE_MENU_SLIDER_HEIGHT / 2;
+            ctx.fillStyle = 'lime'; ctx.beginPath(); ctx.arc(handleX, handleY, PAUSE_MENU_SLIDER_HANDLE_SIZE / 2, 0, Math.PI * 2); ctx.fill();
+            ctx.font = `${PAUSE_MENU_VALUE_FONT_SIZE}px monospace`; ctx.textAlign = 'right'; ctx.fillText(settings_ghostAlpha.toFixed(2), valueStartX, itemY);
+            pauseMenuElements['ghostSlider'] = { type: 'slider', rect: sliderRect, handleX: handleX, handleY: handleY, min: minAlpha, max: maxAlpha, value: settings_ghostAlpha, setting: 'ghostAlpha' };
+            currentY += PAUSE_MENU_ITEM_GAP * 1.5;
+
+            // 2. Matrix Density Slider - REMOVED
+            // currentY += PAUSE_MENU_ITEM_GAP * 1.5; // Remove associated spacing
+
+            // 3. Block Style Toggle Button
+            itemY = currentY; ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`; ctx.textAlign = 'left'; ctx.fillStyle = PAUSE_MENU_TEXT_COLOR;
+            const blockStyleLabel = "Block Style:"; const blockStyleValue = settings_useWireframeBlocks ? "[Wireframe]" : "[Filled]"; const blockStyleText = `${blockStyleLabel} ${blockStyleValue}`;
+            const blockTextMetrics = ctx.measureText(blockStyleText); const blockButtonWidth = blockTextMetrics.width + PAUSE_MENU_BUTTON_PADDING_X * 2; const blockButtonHeight = PAUSE_MENU_ITEM_FONT_SIZE + PAUSE_MENU_BUTTON_PADDING_Y * 2; const blockButtonX = centerX - blockButtonWidth / 2; const blockButtonRect = { x: blockButtonX, y: itemY - blockButtonHeight/2, width: blockButtonWidth, height: blockButtonHeight };
+            ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'; ctx.fillRect(blockButtonRect.x, blockButtonRect.y, blockButtonRect.width, blockButtonRect.height); ctx.strokeStyle = 'lime'; ctx.lineWidth = 1; ctx.strokeRect(blockButtonRect.x, blockButtonRect.y, blockButtonRect.width, blockButtonRect.height);
+            ctx.fillStyle = PAUSE_MENU_TEXT_COLOR; ctx.textAlign = 'center'; ctx.fillText(blockStyleText, centerX, itemY); pauseMenuElements['blockStyleButton'] = { type: 'button', rect: blockButtonRect, setting: 'useWireframeBlocks' };
+            currentY += PAUSE_MENU_ITEM_GAP * 1.2;
+
+            // 4. SFX Toggle Button - NEW
+            itemY = currentY; ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`; ctx.textAlign = 'left'; ctx.fillStyle = PAUSE_MENU_TEXT_COLOR;
+            const sfxText = `SFX: [${settings_sfxEnabled ? 'ON' : 'OFF'}]`;
+            const sfxTextMetrics = ctx.measureText(sfxText); const sfxButtonWidth = sfxTextMetrics.width + PAUSE_MENU_BUTTON_PADDING_X * 2; const sfxButtonHeight = PAUSE_MENU_ITEM_FONT_SIZE + PAUSE_MENU_BUTTON_PADDING_Y * 2; const sfxButtonX = centerX - sfxButtonWidth / 2; const sfxButtonRect = { x: sfxButtonX, y: itemY - sfxButtonHeight/2, width: sfxButtonWidth, height: sfxButtonHeight };
+            ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'; ctx.fillRect(sfxButtonRect.x, sfxButtonRect.y, sfxButtonRect.width, sfxButtonRect.height); ctx.strokeStyle = 'lime'; ctx.lineWidth = 1; ctx.strokeRect(sfxButtonRect.x, sfxButtonRect.y, sfxButtonRect.width, sfxButtonRect.height);
+            ctx.fillStyle = PAUSE_MENU_TEXT_COLOR; ctx.textAlign = 'center'; ctx.fillText(sfxText, centerX, itemY); pauseMenuElements['sfxButton'] = { type: 'button', rect: sfxButtonRect, setting: 'sfxEnabled' };
+            currentY += PAUSE_MENU_ITEM_GAP * 1.2;
+
+            // 5. Fullscreen Toggle Button
+            itemY = currentY; ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`; ctx.textAlign = 'left'; ctx.fillStyle = PAUSE_MENU_TEXT_COLOR;
+            const fsText = document.fullscreenElement ? "Exit Fullscreen" : "Enter Fullscreen"; const fsTextMetrics = ctx.measureText(fsText); const fsButtonWidth = fsTextMetrics.width + PAUSE_MENU_BUTTON_PADDING_X * 2; const fsButtonHeight = PAUSE_MENU_ITEM_FONT_SIZE + PAUSE_MENU_BUTTON_PADDING_Y * 2; const fsButtonX = centerX - fsButtonWidth / 2; const fsButtonRect = { x: fsButtonX, y: itemY - fsButtonHeight/2, width: fsButtonWidth, height: fsButtonHeight };
+            ctx.fillStyle = 'rgba(100, 255, 100, 0.2)'; ctx.fillRect(fsButtonRect.x, fsButtonRect.y, fsButtonRect.width, fsButtonRect.height); ctx.strokeStyle = 'lime'; ctx.lineWidth = 1; ctx.strokeRect(fsButtonRect.x, fsButtonRect.y, fsButtonRect.width, fsButtonRect.height);
+            ctx.fillStyle = PAUSE_MENU_TEXT_COLOR; ctx.textAlign = 'center'; ctx.fillText(fsText, centerX, itemY); pauseMenuElements['fullscreenButton'] = { type: 'button', rect: fsButtonRect, action: 'toggleFullscreen' };
+
+            // Draw Close Button (Top Right)
+            const closeX = pauseMenuCloseButtonRect.x; const closeY = pauseMenuCloseButtonRect.y; const closeSize = pauseMenuCloseButtonRect.width;
+            ctx.strokeStyle = 'rgba(255, 100, 100, 0.8)'; ctx.fillStyle = 'rgba(150, 50, 50, 0.5)'; ctx.lineWidth = 2; ctx.fillRect(closeX, closeY, closeSize, closeSize); ctx.strokeRect(closeX, closeY, closeSize, closeSize); ctx.beginPath(); ctx.moveTo(closeX + closeSize * 0.2, closeY + closeSize * 0.2); ctx.lineTo(closeX + closeSize * 0.8, closeY + closeSize * 0.8); ctx.moveTo(closeX + closeSize * 0.8, closeY + closeSize * 0.2); ctx.lineTo(closeX + closeSize * 0.2, closeY + closeSize * 0.8); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255, 200, 200, 0.9)'; ctx.stroke();
+            pauseMenuElements['closeButton'] = { type: 'closeButton', rect: pauseMenuCloseButtonRect };
+
+            // Resume Instruction (Bottom)
+            ctx.font = `${PAUSE_MENU_VALUE_FONT_SIZE}px monospace`; ctx.fillStyle = 'rgba(180, 255, 180, 0.7)'; ctx.textAlign = 'center'; ctx.fillText("(Press P, Tap 'X', or Tap Background to Resume)", centerX, height * 0.9);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        }
 
         // ===========================================
-        // Game Loop (Updated Logic)
+        // Game Loop (Stable)
         // ===========================================
         let gameStartTime = 0; let lastFrameTime = 0; const MAX_FPS = 60; const MIN_FRAME_TIME = 1000 / MAX_FPS;
         function gameLoop(timestamp) {
-            requestAnimationFrame(gameLoop);
-            const elapsed = timestamp - lastFrameTime;
-            // Limit frame rate if needed (optional, but good for consistency)
-            // if (elapsed < MIN_FRAME_TIME) return;
-            lastFrameTime = timestamp;
-            const now = performance.now();
-
-            // --- Game Logic Update ---
-            if (!isPaused && !gameOver && currentPiece) {
-                 // Check Lock Delay first
-                 if (isLockDelayActive) {
-                     if (now - lockDelayStartTime > LOCK_DELAY_DURATION) {
-                        // --- Extended Lock Check (Anti-ledge sticking) ---
-                        const canSlideLeft = isValidMove(currentPiece.shape, currentRow, currentCol - 1);
-                        const canSlideRight = isValidMove(currentPiece.shape, currentRow, currentCol + 1);
-                        const canFallAfterSlideLeft = canSlideLeft && isValidMove(currentPiece.shape, currentRow + 1, currentCol - 1);
-                        const canFallAfterSlideRight = canSlideRight && isValidMove(currentPiece.shape, currentRow + 1, currentCol + 1);
-
-                        if (canFallAfterSlideLeft || canFallAfterSlideRight) {
-                            // Piece is likely on a ledge. Reset lock delay timer ONLY.
-                            // This gives the player more time or waits for the standard auto-drop.
-                            lockDelayStartTime = now;
-                            // REMOVED: lastDropTime = now;
-                            // console.log("Lock delay reset - potential slide detected."); // Optional log
-                        } else {
-                            // Piece cannot fall from current pos, nor after sliding L/R.
-                            lockPiece(); // Lock the piece
-                        }
-                        // --- End Extended Lock Check ---
-                     }
-                 }
-                 // Automatic Drop (only if lock delay is NOT active)
-                 else if (now - lastDropTime > dropInterval) {
-                     const moveResult = movePiece(0, 1); // Try to move down
-                     if (moveResult.needsLock) {
-                         // Could not move down, start lock delay
-                         isLockDelayActive = true;
-                         lockDelayStartTime = now;
-                     } else if (moveResult.moved) {
-                         // Successfully moved down, reset drop timer
-                         lastDropTime = now;
-                     }
-                     // If moveResult is {moved: false, needsLock: false}, it means piece hit side wall or similar,
-                     // but auto-drop timer should still reset based on `lastDropTime` to prevent instant multi-drops.
-                     // However, the check `now - lastDropTime > dropInterval` handles this. Let's reset anyway.
-                      else {
-                          lastDropTime = now; // Reset timer even if move failed horizontally/vertically without needing lock yet
-                      }
-                 }
-            }
-
-             // --- Drawing ---
-             if (isPaused && !gameOver && gameStartTime === 0) {
-                 updatePromptGlitches(); // Only update prompt glitches if showing prompt
-             }
-
-            // Background Clear / Matrix Rain
-            ctx.fillStyle = `rgba(0, 0, 0, ${MATRIX_GLOBAL_FADE_FACTOR})`;
-            ctx.fillRect(0, 0, width, height);
-            MATRIX_drawGlobalRain(ctx);
-            drawTitle(); // Draw title over matrix
-
-            if (gameOver) {
-                drawGameOverScreen();
-                if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
-            } else if (isPaused && gameStartTime === 0) {
-                // Initial paused state, show prompt
-                if (promptElement.style.display === 'none') { promptElement.style.display = 'block'; }
-            } else {
-                // Game is active (or paused mid-game, though not implemented)
-                drawGame(timestamp); // Draws board background, pieces, ghost
-                drawInfoBoxes(timestamp);
-                drawScoreAndLines();
-                if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
-            }
-
-            // Draw global flash effects last
-            if (now < flashEndTime) { ctx.fillStyle = FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
-            if (now < speedUpFlashEndTime) { ctx.fillStyle = SPEED_UP_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
-            if (now < tetrisFlashEndTime) { ctx.fillStyle = TETRIS_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
+            requestAnimationFrame(gameLoop); const elapsed = timestamp - lastFrameTime; lastFrameTime = timestamp; const now = performance.now();
+            if (!isPaused && !gameOver) { if (currentPiece) { if (isLockDelayActive) { if (now - lockDelayStartTime > LOCK_DELAY_DURATION) { lockPiece(); } } else if (now - lastDropTime > dropInterval) { const moveResult = movePiece(0, 1); if (moveResult.needsLock) { isLockDelayActive = true; lockDelayStartTime = now; } else if (moveResult.moved) { lastDropTime = now; } else { lastDropTime = now; } } } }
+            else if (isPaused && !gameOver && gameStartTime === 0) { updatePromptGlitches(); }
+            ctx.fillStyle = `rgba(0, 0, 0, ${MATRIX_GLOBAL_FADE_FACTOR})`; ctx.fillRect(0, 0, width, height); MATRIX_drawGlobalRain(ctx); drawTitle();
+            if (gameOver) { drawGameOverScreen(); if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } }
+            else if (isPaused) { if (gameStartTime === 0) { if (promptElement.style.display === 'none') promptElement.style.display = 'block'; } else { drawGame(timestamp); drawInfoBoxes(timestamp); drawScoreAndLines(); drawPauseMenu(); /* No settings icon when paused */ if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } } }
+            else { drawGame(timestamp); drawInfoBoxes(timestamp); drawScoreAndLines(); drawSettingsIcon(); /* Draw settings icon */ if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } }
+            if (now < flashEndTime) { ctx.fillStyle = FLASH_COLOR; ctx.fillRect(0, 0, width, height); } if (now < speedUpFlashEndTime) { ctx.fillStyle = SPEED_UP_FLASH_COLOR; ctx.fillRect(0, 0, width, height); } if (now < tetrisFlashEndTime) { ctx.fillStyle = TETRIS_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
         }
 
         // ===========================================
-        // Setup & Sizing (Stable)
+        // Setup & Sizing
         // ===========================================
-        function calculateSizes() { const availH = height - boardYOffset * 2; const blockFromHeight = availH / boardHeight; const blockFromWidth = width / boardWidth; blockSize = Math.floor(Math.min(blockFromHeight, blockFromWidth)) -1; blockSize = Math.max(5, blockSize); const totalBoardWidth = boardWidth * blockSize; boardXOffset = Math.floor((width - totalBoardWidth) / 2); const scoreHeight = SCORE_LINES_FONT_SIZE + SCORE_LINES_Y_MARGIN; const boxTopY = scoreHeight + INFO_BOX_MARGIN; const boxWidth = Math.floor(width * INFO_BOX_WIDTH_PERCENT); const boxHeight = Math.floor(boxWidth * INFO_BOX_HEIGHT_RATIO); const availableSideSpace = boardXOffset - INFO_BOX_MARGIN; let finalBoxWidth = Math.min(boxWidth, availableSideSpace); let finalBoxHeight = Math.floor(finalBoxWidth * INFO_BOX_HEIGHT_RATIO); const minBoxDim = Math.max(20, blockSize * 3); if (finalBoxWidth < minBoxDim || finalBoxHeight < minBoxDim) { finalBoxWidth = minBoxDim; finalBoxHeight = minBoxDim; const requiredTotalWidth = finalBoxWidth * 2 + totalBoardWidth + INFO_BOX_MARGIN * 2; if (requiredTotalWidth > width) { boardXOffset = Math.floor((width - totalBoardWidth) / 2); } } nextBoxRect = { x: INFO_BOX_MARGIN, y: boxTopY, width: finalBoxWidth, height: finalBoxHeight }; holdBoxRect = { x: width - finalBoxWidth - INFO_BOX_MARGIN, y: boxTopY, width: finalBoxWidth, height: finalBoxHeight }; }
+        function calculateSizes() { // <-- UPDATED UI element positions and sizes
+             // Board size calculation depends on available height first
+             // Consider space needed at the bottom for score/button
+             const bottomUISpace = SCORE_LINES_FONT_SIZE + SCORE_LINES_BG_PADDING_Y * 2 + SCORE_LINES_Y_MARGIN + 10; // Space for score + buffer
+             const bottomButtonSpace = SETTINGS_ICON_SIZE + SETTINGS_ICON_MARGIN + 5; // Space for pause button
+             const reservedBottomSpace = Math.max(bottomUISpace, bottomButtonSpace); // Max space needed at bottom
+             const topMarginForBoard = boardYOffset + 10; // Simpler top margin
+
+             const blockFromHeight = (height - topMarginForBoard - reservedBottomSpace) / boardHeight;
+             const blockFromWidth = width / boardWidth; // Width is simpler
+             blockSize = Math.max(5, Math.floor(Math.min(blockFromHeight, blockFromWidth)) - 1);
+
+             const totalBoardWidth = boardWidth * blockSize;
+             const totalBoardHeight = boardHeight * blockSize;
+             boardXOffset = Math.floor((width - totalBoardWidth) / 2);
+             const effectiveBoardY = boardYOffset; // Keep board top Y constant
+
+             // Info Boxes (Resized)
+             const boxSize = Math.max(16, Math.floor(blockSize * 3)); // Smaller size (e.g., 3 blocks wide)
+             const finalBoxWidth = boxSize;
+             const finalBoxHeight = boxSize;
+
+             // Positions remain top-left/top-right relative to board
+             nextBoxRect = { x: boardXOffset + INFO_BOX_MARGIN, y: effectiveBoardY + INFO_BOX_MARGIN, width: finalBoxWidth, height: finalBoxHeight };
+             holdBoxRect = { x: boardXOffset + totalBoardWidth - finalBoxWidth - INFO_BOX_MARGIN, y: effectiveBoardY + INFO_BOX_MARGIN, width: finalBoxWidth, height: finalBoxHeight };
+
+             // Settings/Pause Icon (Bottom-Left)
+             settingsButtonRect = {
+                 x: SETTINGS_ICON_MARGIN,
+                 y: height - SETTINGS_ICON_SIZE - SETTINGS_ICON_MARGIN, // Position from bottom
+                 width: SETTINGS_ICON_SIZE,
+                 height: SETTINGS_ICON_SIZE
+             };
+
+             // Pause Menu Close Button (Top-Right - unchanged)
+             pauseMenuCloseButtonRect = { x: width - PAUSE_MENU_CLOSE_BUTTON_SIZE - PAUSE_MENU_CLOSE_BUTTON_MARGIN, y: PAUSE_MENU_CLOSE_BUTTON_MARGIN, width: PAUSE_MENU_CLOSE_BUTTON_SIZE, height: PAUSE_MENU_CLOSE_BUTTON_SIZE };
+
+             // Score/Lines position is calculated dynamically in its draw function based on height
+         }
         function setup(isInitialSetup = false) {
              console.log("--- Running Setup ---", "isInitial:", isInitialSetup);
              width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height;
-             calculateSizes();
-             MATRIX_setupStreams();
-             createBoard(); // Ensure board is fresh
-             score = 0; gameOver = false; dropInterval = initialDropInterval; totalLinesCleared = 0; nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE; flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0; isLockDelayActive = false; lockDelayStartTime = 0; currentPiece = null; nextPiece = getRandomPiece(); // Prepare first next piece
-             heldPiece = null; canSwap = true;
-
-             if (isInitialSetup) {
-                 isPaused = true; gameStartTime = 0; lastFrameTime = 0;
-                 promptElement.style.display = 'block';
-                 resetPromptGlitches();
-                 console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime});
-             } else {
-                 // Starting a new game
-                 console.log("Setup Start Game: attempting to play sequence and set state...");
-                 try {
-                     playStartupSequence();
-                     isPaused = false; // Unpause *before* spawning first piece
-                     spawnPiece(); // Spawn the first piece
-                     // If spawnPiece immediately caused gameOver, isPaused will be set back to true inside it.
-                     if (!gameOver) { // Only set timers if game didn't end on first spawn
-                        gameStartTime = performance.now();
-                        lastDropTime = gameStartTime;
-                        lastFrameTime = gameStartTime;
-                     }
-                     promptElement.style.display = 'none';
-                     resetPromptGlitches();
-                     console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime});
-                 } catch (error) {
-                    console.error("!!!! ERROR DURING setup(false) !!!!", error);
-                    isPaused = true; gameOver = true;
-                    promptElement.textContent = "Error during startup. Check console.";
-                    promptElement.style.display = 'block';
-                 }
-             }
+             if (isInitialSetup) { loadSettings(); } // Load settings (incl. SFX)
+             calculateSizes(); // Includes new UI positions/sizes
+             MATRIX_setupStreams(); createBoard(); score = 0; totalLinesCleared = 0; gameOver = false; dropInterval = initialDropInterval; nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE; flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0; isLockDelayActive = false; lockDelayStartTime = 0; currentPiece = null; nextPiece = getRandomPiece(); heldPiece = null; canSwap = true;
+             if (isInitialSetup) { isPaused = true; gameStartTime = 0; lastFrameTime = 0; promptElement.style.display = 'block'; resetPromptGlitches(); console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime}); }
+             else { console.log("Setup Start Game: ..."); try { playStartupSequence(); isPaused = false; spawnPiece(); if (!gameOver) { gameStartTime = performance.now(); lastDropTime = gameStartTime; lastFrameTime = gameStartTime; } else { isPaused = true; } promptElement.style.display = 'none'; resetPromptGlitches(); console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime}); } catch (error) { console.error("!!!! ERROR DURING setup(false) !!!!", error); isPaused = true; gameOver = true; ctx.fillStyle = 'red'; ctx.font = '20px monospace'; ctx.textAlign = 'center'; ctx.fillText("ERROR DURING STARTUP", width/2, height/2); ctx.textAlign = 'left'; if (promptElement) promptElement.style.display = 'none'; } }
              console.log(`--- Setup Complete W:${width} H:${height} ---`);
          }
 
         // ===========================================
-        // Fullscreen & Start (Stable)
+        // Fullscreen & Start
         // ===========================================
         function requestAppFullscreen() { const e=document.documentElement;if(e.requestFullscreen)return e.requestFullscreen();else if(e.webkitRequestFullscreen)return e.webkitRequestFullscreen();else if(e.msRequestFullscreen)return e.msRequestFullscreen();else return Promise.resolve(); }
-        function startGameSequence() {
-             console.log(">>> startGameSequence called. Current state:", {isPaused, gameOver, gameStartTime});
-             initAudio();
-             // Check if the game is already running or over
-             if (!isPaused || gameOver || gameStartTime !== 0) {
-                 console.warn("Start sequence ignored, game already started or over.", {isPaused, gameOver, gameStartTime});
-                 return;
-             }
-             console.log("Conditions met, starting game directly.");
-             // No prompt interaction or fullscreen needed
-             setup(false); // Start the game directly
+        function exitAppFullscreen() { if(document.exitFullscreen) return document.exitFullscreen(); else if(document.webkitExitFullscreen) return document.webkitExitFullscreen(); else if(document.msExitFullscreen) return document.msExitFullscreen(); else return Promise.resolve();}
+        function toggleFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) { requestAppFullscreen().catch(err => console.error(`Fullscreen request failed: ${err.message} (${err.name})`)); } else { exitAppFullscreen().catch(err => console.error(`Fullscreen exit failed: ${err.message} (${err.name})`)); } }
+        function handleStartInteraction() { if (gameStartTime === 0 && !gameOver) { console.log(">>> Start Interaction Triggered <<<"); initAudio(); setup(false); } else if (gameOver) { console.log(">>> Restart Interaction Triggered <<<"); initAudio(); setup(false); } }
+
+        // ===========================================
+        // Pause Menu Interaction (Handles new SFX button)
+        // ===========================================
+        function handlePauseMenuInteraction(x, y, isTapEnd = false) {
+            if (!isPaused || gameOver) return false; let interactedWithElement = false;
+
+            if (!isTapEnd && activeSlider) { const element = pauseMenuElements[activeSlider]; if (element && element.type === 'slider') { const relativeX = clamp(x - element.rect.x, 0, element.rect.width); const ratio = relativeX / element.rect.width; let newValue = element.min + ratio * (element.max - element.min); if (element.setting === 'ghostAlpha') { settings_ghostAlpha = clamp(newValue, element.min, element.max); } /* Removed density slider */ saveSettings(); interactedWithElement = true; return true; } }
+            if (!isTapEnd && !activeSlider) { for (const key in pauseMenuElements) { const element = pauseMenuElements[key]; if (!element || !element.rect) continue; if (element.type === 'slider') { const handleDistSq = (x - element.handleX)**2 + (y - element.handleY)**2; const handleRadiusSq = (PAUSE_MENU_SLIDER_HANDLE_SIZE * 1.5)**2; if (handleDistSq <= handleRadiusSq || isPointInRect(x, y, element.rect)) { activeSlider = key; interactedWithElement = true; const relativeX = clamp(x - element.rect.x, 0, element.rect.width); const ratio = relativeX / element.rect.width; let newValue = element.min + ratio * (element.max - element.min); if (element.setting === 'ghostAlpha') settings_ghostAlpha = clamp(newValue, element.min, element.max); /* Removed density slider */ saveSettings(); SOUNDS.UI_CLICK(); break; } } else if (element.type === 'button' || element.type === 'closeButton') { if (isPointInRect(x, y, element.rect)) { interactedWithElement = true; break; } } } }
+            if (isTapEnd && !activeSlider) { for (const key in pauseMenuElements) { const element = pauseMenuElements[key]; if (!element || !element.rect) continue;
+                 if (element.type === 'button' && isPointInRect(x, y, element.rect)) {
+                     interactedWithElement = true;
+                     if (element.action === 'toggleFullscreen') { toggleFullscreen(); SOUNDS.UI_CLICK(); }
+                     else if (element.setting === 'useWireframeBlocks') { settings_useWireframeBlocks = !settings_useWireframeBlocks; saveSettings(); SOUNDS.UI_CLICK(); /* Play click sound */ }
+                     else if (element.setting === 'sfxEnabled') { // <-- Handle SFX toggle
+                          settings_sfxEnabled = !settings_sfxEnabled; saveSettings(); SOUNDS.UI_CLICK(); /* Play click sound */
+                     }
+                     break;
+                 } else if (element.type === 'closeButton' && isPointInRect(x, y, element.rect)) { interactedWithElement = true; resumeGame(); return true; } }
+            }
+            if (isTapEnd && !interactedWithElement && !activeSlider && !isPointInRect(x, y, settingsButtonRect)) { resumeGame(); return true; }
+            return interactedWithElement || !!activeSlider;
         }
 
-        // ===========================================
-        // Touch Controls (Stable)
-        // ===========================================
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if (gameOver) { setup(false); return; } if (isPaused || !e.touches[0]) return; touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY; touchStartTime = performance.now(); isDraggingDown = false; isDraggingHorizontally = false; lastSoftDropY = touchStartY; lastHorizontalMoveX = touchStartX; horizontalMoveAccumulator = 0; }, { passive: false });
-        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if (isPaused || gameOver || !currentPiece || !e.touches[0]) return; const currentX = e.touches[0].clientX; const currentY = e.touches[0].clientY; const totalDeltaX = currentX - touchStartX; const totalDeltaY = currentY - touchStartY; const instantDeltaX = currentX - lastHorizontalMoveX; const instantDeltaY = currentY - lastSoftDropY; const H_DOMINANT = Math.abs(totalDeltaX) > Math.abs(totalDeltaY) * 1.2 && Math.abs(totalDeltaX) > TAP_MOVEMENT_THRESHOLD / 2; const V_DOMINANT = Math.abs(totalDeltaY) > Math.abs(totalDeltaX) * 1.2 && totalDeltaY > SOFT_DROP_START_THRESHOLD; if (!isDraggingDown && (isDraggingHorizontally || H_DOMINANT)) { if (!isDraggingHorizontally) { isDraggingHorizontally = true; } horizontalMoveAccumulator += instantDeltaX; const effectiveBlockSize = Math.max(10, blockSize); const requiredPixelDrag = effectiveBlockSize * HORIZONTAL_MOVE_PIXEL_THRESHOLD; while (Math.abs(horizontalMoveAccumulator) >= requiredPixelDrag) { const direction = horizontalMoveAccumulator > 0 ? 1 : -1; if (movePiece(direction, 0).moved) { SOUNDS.MOVE(); /* Play move sound on drag */ horizontalMoveAccumulator -= direction * requiredPixelDrag; } else { horizontalMoveAccumulator = 0; break; } } lastHorizontalMoveX = currentX; } else if (!isDraggingHorizontally && (isDraggingDown || V_DOMINANT)) { if (!isDraggingDown) { isDraggingDown = true; } if (!isLockDelayActive) { let pixelsDraggedSinceLastDrop = instantDeltaY; let blocksToDrop = Math.floor(pixelsDraggedSinceLastDrop * SOFT_DROP_MOVE_PER_PIXEL); if (blocksToDrop > 0) { let successfulDrops = 0; for (let i = 0; i < blocksToDrop; i++) { if (softDrop()) { successfulDrops++; } else { break; } } if (successfulDrops > 0) { lastSoftDropY += successfulDrops / SOFT_DROP_MOVE_PER_PIXEL; lastSoftDropY = Math.min(lastSoftDropY, currentY); } } } lastSoftDropY = currentY; /* lastDropTime = performance.now(); // Don't reset auto-drop timer during drag */ } else { lastHorizontalMoveX = currentX; lastSoftDropY = currentY; } }, { passive: false });
-        canvas.addEventListener('touchend', (e) => { e.preventDefault(); const wasDraggingDown = isDraggingDown; const wasDraggingHorizontally = isDraggingHorizontally; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; if (isPaused || gameOver || !e.changedTouches[0]) { return; } const tEndX = e.changedTouches[0].clientX; const tEndY = e.changedTouches[0].clientY; const tEndTime = performance.now(); const dX = tEndX - touchStartX; const dY = tEndY - touchStartY; const elTime = tEndTime - touchStartTime; let actionTaken = false; if (!wasDraggingDown && !wasDraggingHorizontally && elTime < TAP_TIME_LIMIT && Math.abs(dX) < TAP_MOVEMENT_THRESHOLD && Math.abs(dY) < TAP_MOVEMENT_THRESHOLD) { let tappedHold = (holdBoxRect.width > 0 && tEndX >= holdBoxRect.x && tEndX <= holdBoxRect.x + holdBoxRect.width && tEndY >= holdBoxRect.y && tEndY <= holdBoxRect.y + holdBoxRect.height); let tappedNext = (nextBoxRect.width > 0 && tEndX >= nextBoxRect.x && tEndX <= nextBoxRect.x + nextBoxRect.width && tEndY >= nextBoxRect.y && tEndY <= nextBoxRect.y + nextBoxRect.height); if (tappedHold) { swapPiece(); actionTaken = true; } else if (tappedNext) { /* Ignore tap on next box */ actionTaken = false; } else { rotatePiece(); actionTaken = true; } } if (!actionTaken && !wasDraggingDown && !wasDraggingHorizontally && elTime < SWIPE_TIME_LIMIT) { if (Math.abs(dY) > SWIPE_THRESHOLD && Math.abs(dY) > Math.abs(dX) * 1.2) { hardDrop(); actionTaken = true; } } if ((wasDraggingDown || wasDraggingHorizontally) && !actionTaken) { // End of a drag
-            // Check if piece is now in a position where it should lock, and start delay if needed
-            if (currentPiece && !isLockDelayActive && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
-                isLockDelayActive = true;
-                lockDelayStartTime = performance.now();
-            }
-            actionTaken = true;
-        } }, { passive: false });
 
         // ===========================================
-        // Keyboard Controls (Stable)
+        // Event Listeners (Check settings button at bottom)
         // ===========================================
-        window.addEventListener('keydown', (e) => {
-            if (gameOver && e.key === 'Enter') { e.preventDefault(); setup(false); return; }
-            if (isPaused || gameOver || !currentPiece) { return; }
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Shift', 'w', 'a', 's', 'd'].includes(e.key.toLowerCase()) || e.code === 'Space') { e.preventDefault(); initAudio(); }
-            switch (e.key.toLowerCase()) {
-                case 'arrowleft':
-                case 'a': if (movePiece(-1, 0).moved) SOUNDS.MOVE(); break;
-                case 'arrowright':
-                case 'd': if (movePiece(1, 0).moved) SOUNDS.MOVE(); break;
-                case 'arrowdown':
-                case 's': softDrop(); break;
-                case 'arrowup':
-                case 'w': hardDrop(); break;
-                case ' ': case 'spacebar': rotatePiece(); break;
-                case 'shift': swapPiece(); break;
-            }
-        });
-
-        // ===========================================
-        // Mouse Controls (New)
-        // ===========================================
-        canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); // Prevent the context menu from appearing
-        });
-
-        canvas.addEventListener('mousedown', (e) => {
-            if (isPaused || gameOver || !currentPiece) return;
-            
-            e.preventDefault();
-            initAudio();
-            
-            if (e.button === 0) { // Left mouse button
-                rotatePiece();
-            } else if (e.button === 2) { // Right mouse button
-                swapPiece();
-            }
-        });
-
-        // ===========================================
-        // Resize & Initial Start (Stable)
-        // ===========================================
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if (gameOver) { setup(false); return; } const touch = e.changedTouches[0]; if (!touch) return; const touchX = touch.clientX; const touchY = touch.clientY; if (isPaused && gameStartTime > 0) { touchIdentifier = touch.identifier; if (handlePauseMenuInteraction(touchX, touchY, false)) { return; } } else if (!isPaused && !gameOver) { if (isPointInRect(touchX, touchY, settingsButtonRect)) { togglePause(); touchIdentifier = null; return; } touchIdentifier = touch.identifier; touchStartX = touchX; touchStartY = touchY; touchStartTime = performance.now(); isDraggingDown = false; isDraggingHorizontally = false; lastSoftDropY = touchStartY; lastHorizontalMoveX = touchStartX; horizontalMoveAccumulator = 0; } }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) return; const currentX = touch.clientX; const currentY = touch.clientY; if (isPaused && activeSlider) { handlePauseMenuInteraction(currentX, currentY, false); return; } if (isPaused || gameOver || !currentPiece) return; const totalDeltaX = currentX - touchStartX; const totalDeltaY = currentY - touchStartY; const instantDeltaX = currentX - lastHorizontalMoveX; const instantDeltaY = currentY - lastSoftDropY; const H_DOMINANT = Math.abs(totalDeltaX) > Math.abs(totalDeltaY) * 1.2 && Math.abs(totalDeltaX) > TAP_MOVEMENT_THRESHOLD / 2; const V_DOMINANT = Math.abs(totalDeltaY) > Math.abs(totalDeltaX) * 1.2 && totalDeltaY > SOFT_DROP_START_THRESHOLD; if (!isDraggingDown && (isDraggingHorizontally || H_DOMINANT)) { if (!isDraggingHorizontally) isDraggingHorizontally = true; horizontalMoveAccumulator += instantDeltaX; const effectiveBlockSize = Math.max(10, blockSize); const requiredPixelDrag = effectiveBlockSize * HORIZONTAL_MOVE_PIXEL_THRESHOLD; while (Math.abs(horizontalMoveAccumulator) >= requiredPixelDrag) { const direction = horizontalMoveAccumulator > 0 ? 1 : -1; if (movePiece(direction, 0).moved) { SOUNDS.MOVE(); horizontalMoveAccumulator -= direction * requiredPixelDrag; } else { horizontalMoveAccumulator = 0; break; } } lastHorizontalMoveX = currentX; } else if (!isDraggingHorizontally && (isDraggingDown || V_DOMINANT)) { if (!isDraggingDown) isDraggingDown = true; if (!isLockDelayActive) { let pixelsDraggedSinceLastDrop = instantDeltaY; let blocksToDrop = Math.floor(pixelsDraggedSinceLastDrop * SOFT_DROP_MOVE_PER_PIXEL); if (blocksToDrop > 0) { let successfulDrops = 0; for (let i = 0; i < blocksToDrop; i++) { if (softDrop()) successfulDrops++; else break; } if (successfulDrops > 0) lastSoftDropY = Math.min(lastSoftDropY + successfulDrops / SOFT_DROP_MOVE_PER_PIXEL, currentY); } } lastSoftDropY = currentY; } else { lastHorizontalMoveX = currentX; lastSoftDropY = currentY; } }, { passive: false });
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) { const genericTouch = e.changedTouches[0]; if (isPaused && gameStartTime > 0 && genericTouch) { handlePauseMenuInteraction(genericTouch.clientX, genericTouch.clientY, true); } return; } touchIdentifier = null; const tEndX = touch.clientX; const tEndY = touch.clientY; if (activeSlider) { activeSlider = null; return; } if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(tEndX, tEndY, true)) { return; } } if (isPaused || gameOver) return; const wasDraggingDown = isDraggingDown; const wasDraggingHorizontally = isDraggingHorizontally; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; const elTime = performance.now() - touchStartTime; const dX = tEndX - touchStartX; const dY = tEndY - touchStartY; let actionTaken = false; if (!wasDraggingDown && !wasDraggingHorizontally && elTime < TAP_TIME_LIMIT && Math.abs(dX) < TAP_MOVEMENT_THRESHOLD && Math.abs(dY) < TAP_MOVEMENT_THRESHOLD) { let tappedHold = (holdBoxRect.width > 0 && isPointInRect(tEndX, tEndY, holdBoxRect)); let tappedNext = (nextBoxRect.width > 0 && isPointInRect(tEndX, tEndY, nextBoxRect)); if (tappedHold) { swapPiece(); actionTaken = true; } else if (tappedNext) { actionTaken = false; } else { rotatePiece(); actionTaken = true; } } if (!actionTaken && !wasDraggingDown && !wasDraggingHorizontally && elTime < SWIPE_TIME_LIMIT) { if (Math.abs(dY) > SWIPE_THRESHOLD && Math.abs(dY) > Math.abs(dX) * 1.2) { hardDrop(); actionTaken = true; } } if ((wasDraggingDown || wasDraggingHorizontally) && !actionTaken && currentPiece) { if (!isLockDelayActive && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } actionTaken = true; } }, { passive: false });
+        canvas.addEventListener('touchcancel', (e) => { const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (touch) { touchIdentifier = null; activeSlider = null; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; console.log("Tracked touch cancelled"); } }, { passive: false });
+        window.addEventListener('keydown', (e) => { if ((isPaused && gameStartTime === 0 && promptElement.style.display !== 'none') || gameOver) { if (e.key === 'Enter') { e.preventDefault(); handleStartInteraction(); return; } } if (e.key.toLowerCase() === 'p') { e.preventDefault(); togglePause(); return; } if (isPaused || gameOver || !currentPiece) return; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Shift', 'w', 'a', 's', 'd'].includes(e.key) || e.code === 'Space') { e.preventDefault(); initAudio(); switch (e.key.toLowerCase()) { case 'arrowleft': case 'a': if(movePiece(-1, 0).moved) SOUNDS.MOVE(); break; case 'arrowright': case 'd': if(movePiece(1, 0).moved) SOUNDS.MOVE(); break; case 'arrowdown': case 's': softDrop(); break; case 'arrowup': case 'w': hardDrop(); break; case ' ': case 'spacebar': rotatePiece(); break; case 'shift': swapPiece(); break; } } });
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        canvas.addEventListener('mousedown', (e) => { if (gameOver) { if (e.button === 0) { setup(false); } return; } const mouseX = e.clientX; const mouseY = e.clientY; initAudio(); if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(mouseX, mouseY, false)) { e.preventDefault(); } return; } if (!isPaused && !gameOver) { if (isPointInRect(mouseX, mouseY, settingsButtonRect)) { togglePause(); e.preventDefault(); return; } if (e.button === 0) { let tappedHold = (holdBoxRect.width > 0 && isPointInRect(mouseX, mouseY, holdBoxRect)); let tappedNext = (nextBoxRect.width > 0 && isPointInRect(mouseX, mouseY, nextBoxRect)); if (tappedHold) { swapPiece(); e.preventDefault(); } else if (!tappedNext) { rotatePiece(); e.preventDefault(); } } else if (e.button === 2) { swapPiece(); e.preventDefault(); } } });
+        canvas.addEventListener('mousemove', (e) => { if (isPaused && activeSlider && e.buttons === 1) { handlePauseMenuInteraction(e.clientX, e.clientY, false); e.preventDefault(); } });
+        canvas.addEventListener('mouseup', (e) => { const mouseX = e.clientX; const mouseY = e.clientY; if (activeSlider) { activeSlider = null; e.preventDefault(); return; } if (isPaused && gameStartTime > 0 && e.button === 0) { if (handlePauseMenuInteraction(mouseX, mouseY, true)) { e.preventDefault(); } } });
         window.addEventListener('resize', () => { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; calculateSizes(); MATRIX_setupStreams(); });
-
-        // --- Initial Setup & Start Game Loop ---
+        promptElement.addEventListener('click', handleStartInteraction);
         setup(true);
         requestAnimationFrame(gameLoop);
-        // Automatically start the game sequence after initial setup
-        // Use a small delay to ensure everything is ready
-        setTimeout(startGameSequence, 100);
-        console.log(">>> Matrix Tetris Initialized (Paused) <<<");
+        console.log(">>> Matrix Tetris Initialized (Paused - Awaiting Interaction) <<<");
 
     })(); // End of IIFE
     </script>
