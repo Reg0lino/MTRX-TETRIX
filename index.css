@@ -1,0 +1,288 @@
+/* index.css - Matrix Theme for Tetris Landing */
+:root {
+    --matrix-green: #0f0;
+    --matrix-green-dark: #0a0;
+    --matrix-green-darker: #050;
+    --matrix-black: #000;
+    --bg-color: var(--matrix-black);
+    --primary-accent: var(--matrix-green);
+    --secondary-accent: #9f9;
+    --text-color: var(--matrix-green);
+    --border-color: rgba(0, 255, 0, 0.3);
+    --glow-color: rgba(0, 255, 0, 0.5);
+    --link-bg: rgba(0, 30, 0, 0.6);
+    --link-hover-bg: rgba(0, 60, 0, 0.8);
+    --container-bg: rgba(0, 5, 0, 0.7);
+    --scanline-intensity: 0.15;
+    --glitch-speed: 0.1s;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 16px;
+    line-height: 1.7;
+    overflow: hidden; /* Important: Prevent scrollbars from background elements */
+}
+
+/* --- Background Effects Styling --- */
+#matrix-rain-container,
+#background-glitches {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0; /* Behind main container */
+    pointer-events: none; /* Allow clicks through */
+    overflow: hidden;
+}
+
+/* Matrix Rain Numbers */
+.matrix-char {
+    position: absolute;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--matrix-green);
+    font-size: 16px; /* Adjust size as needed */
+    user-select: none;
+    text-shadow: 0 0 3px var(--matrix-green-dark);
+    opacity: 1;
+    transition: opacity 0.5s ease-out, transform 0.1s linear; /* Fade out and movement */
+}
+
+.matrix-char.fade {
+    opacity: 0 !important; /* Force fade */
+}
+
+/* Background Glitch Bars */
+.glitch-bar {
+    position: absolute;
+    background-color: rgba(0, 255, 0, 0.08); /* Semi-transparent green */
+    box-shadow: 0 0 5px rgba(0, 255, 0, 0.2);
+    opacity: 0; /* Start hidden */
+    pointer-events: none;
+}
+
+.gb1 { /* Thin horizontal */
+    width: 80%; height: 2px; top: 15%; left: 10%;
+    animation: glitch-flicker 3s infinite steps(1, end) 0.5s;
+}
+.gb2 { /* Thicker vertical */
+    width: 3px; height: 40%; top: 30%; left: 85%;
+    animation: glitch-flicker 4s infinite steps(1, end) 1.2s;
+}
+.gb3 { /* Small block */
+    width: 10%; height: 5%; top: 70%; left: 5%;
+    animation: glitch-flicker 2.5s infinite steps(1, end) 0.1s;
+}
+.gb4 { /* Wider horizontal */
+    width: 50%; height: 4px; top: 90%; left: 40%;
+    animation: glitch-flicker 5s infinite steps(1, end) 2s;
+}
+
+@keyframes glitch-flicker {
+  0%, 100% { opacity: 0; transform: translateX(0); }
+  1% { opacity: 1; transform: translateX(-2px); }
+  2% { opacity: 0; }
+  3% { opacity: 1; transform: translateY(1px); }
+  4% { opacity: 0; }
+  4.5% { opacity: 1; transform: translateX(3px); }
+  5.5% { opacity: 0; }
+  6% { opacity: 1; transform: translateY(-2px);}
+  7% { opacity: 0;}
+}
+/* --- End Background Effects Styling --- */
+
+
+/* Scanlines overlay styling remains the same */
+.scanlines {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%,
+        rgba(0, 0, 0, calc(0.25 * var(--scanline-intensity))) 50%
+    ), linear-gradient(
+        90deg, rgba(0, 255, 0, calc(0.03 * var(--scanline-intensity))),
+        rgba(0, 100, 0, calc(0.01 * var(--scanline-intensity))),
+        rgba(0, 200, 0, calc(0.03 * var(--scanline-intensity)))
+    );
+    background-size: 100% 3px, 4px 100%;
+    z-index: 2; /* Above background effects, below main container */
+    animation: scanlineAnim 0.15s linear infinite;
+}
+
+@keyframes scanlineAnim { /* Keep scanline animation */
+    0% { background-position: 0 0; }
+    100% { background-position: 0 3px; }
+}
+
+
+.container {
+    max-width: 850px;
+    margin: 30px auto;
+    padding: 25px;
+    border: 1px solid var(--matrix-green-darker);
+    background-color: var(--container-bg);
+    box-shadow: 0 0 15px rgba(0, 50, 0, 0.5);
+    position: relative;
+    z-index: 3; /* Above scanlines and background */
+    text-shadow: 0 0 2px var(--matrix-green-darker);
+}
+
+/* Rest of the styles for .main-header, .main-link, .content, etc. remain unchanged */
+/* ... (Keep all styles from the previous CSS version below this line) ... */
+
+.main-header {
+    text-align: center;
+    margin-bottom: 2.5em;
+    border-bottom: 1px dashed var(--border-color);
+    padding-bottom: 1.5em;
+    position: relative;
+}
+
+.system-status {
+    position: absolute;
+    top: -10px;
+    left: 10px;
+    font-size: 0.9em;
+    color: var(--matrix-green-dark);
+    opacity: 0.8;
+}
+
+.system-code {
+    position: absolute;
+    bottom: -5px;
+    right: 10px;
+    font-size: 0.9em;
+    color: var(--matrix-green-dark);
+    opacity: 0.7;
+}
+
+.main-link {
+    display: inline-block;
+    padding: 18px 35px;
+    font-size: 1.8em;
+    font-family: 'Share Tech Mono', monospace;
+    font-weight: bold;
+    color: var(--primary-accent);
+    background-color: var(--link-bg);
+    border: 2px solid var(--matrix-green);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, text-shadow 0.3s ease;
+    box-shadow: 0 0 10px var(--glow-color);
+    margin-top: 1em;
+    text-shadow: 0 0 5px var(--matrix-green);
+    position: relative;
+}
+
+.main-link:hover,
+.main-link:focus {
+    background-color: var(--link-hover-bg);
+    color: #fff;
+    box-shadow: 0 0 18px var(--glow-color), inset 0 0 12px rgba(0, 255, 0, 0.15);
+    text-shadow: 0 0 8px #fff, 0 0 15px var(--matrix-green);
+    cursor: pointer;
+}
+
+.content {
+    margin-top: 2em;
+}
+
+section {
+    margin-bottom: 2.5em;
+    padding: 15px;
+    border: 1px solid rgba(0, 100, 0, 0.4);
+    background-color: rgba(0, 15, 0, 0.3);
+}
+
+h2 {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.5em;
+    color: var(--primary-accent);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-top: 0;
+    margin-bottom: 1em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-shadow: 0 0 4px var(--matrix-green);
+    position: relative;
+}
+
+p {
+    margin-bottom: 1em;
+    color: var(--secondary-accent);
+}
+
+pre {
+    background-color: rgba(0, 0, 0, 0.4);
+    border: 1px dashed var(--matrix-green-darker);
+    padding: 15px;
+    color: var(--primary-accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.8;
+    text-shadow: 0 0 2px var(--matrix-green-dark);
+}
+
+.main-footer {
+    text-align: center;
+    margin-top: 3em;
+    padding-top: 1.5em;
+    border-top: 1px dashed var(--border-color);
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--matrix-green-dark);
+    font-size: 0.9em;
+    opacity: 0.8;
+    position: relative;
+}
+
+/* Glitch Effects Styling remains the same */
+.glitch, .glitch-sub, .glitch-heavy {
+    position: relative;
+}
+.glitch::before, .glitch::after,
+.glitch-sub::before, .glitch-sub::after,
+.glitch-heavy::before, .glitch-heavy::after {
+    content: attr(data-text);
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    overflow: hidden; background: inherit; pointer-events: none;
+}
+.glitch::before, .glitch-sub::before {
+    left: 2px; text-shadow: -1px 0 #0f0;
+    animation: glitch-anim1 calc(var(--glitch-speed) * 2.5) infinite linear alternate-reverse;
+}
+.glitch::after, .glitch-sub::after {
+    left: -2px; text-shadow: 1px 0 #0f0;
+    animation: glitch-anim2 calc(var(--glitch-speed) * 1.5) infinite linear alternate-reverse;
+}
+.glitch-heavy::before {
+    left: 3px; text-shadow: -2px 0 #0f0;
+    animation: glitch-anim1 calc(var(--glitch-speed) * 1.8) infinite linear alternate-reverse;
+}
+.glitch-heavy::after {
+    left: -3px; text-shadow: 2px 0 #0f0;
+    animation: glitch-anim2 calc(var(--glitch-speed) * 1.2) infinite linear alternate-reverse;
+    animation-delay: calc(var(--glitch-speed) * -0.5);
+}
+@keyframes glitch-base { /* Optional base flicker */
+    0%{opacity:1}2%{opacity:.8}4%{opacity:1}80%{opacity:1}82%{opacity:.7}100%{opacity:1}
+}
+@keyframes glitch-anim1{0%{clip-path:inset(5% 0 90% 0);transform:translate(-.05em,-.025em)}10%{clip-path:inset(80% 0 5% 0);transform:translate(.025em,.05em)}20%{clip-path:inset(25% 0 60% 0);transform:translate(-.05em,.01em)}30%{clip-path:inset(95% 0 1% 0);transform:translate(.01em,-.025em)}40%{clip-path:inset(40% 0 45% 0);transform:translate(.05em,0)}50%{clip-path:inset(50% 0 30% 0);transform:translate(-.01em,.025em)}60%{clip-path:inset(70% 0 15% 0);transform:translate(.025em,.05em)}70%{clip-path:inset(10% 0 85% 0);transform:translate(-.05em,0)}80%{clip-path:inset(60% 0 20% 0);transform:translate(.01em,-.01em)}90%{clip-path:inset(88% 0 8% 0);transform:translate(-.025em,.05em)}100%{clip-path:inset(33% 0 53% 0);transform:translate(.05em,-.025em)}}
+@keyframes glitch-anim2{0%{clip-path:inset(85% 0 5% 0);transform:translate(.025em,.01em)}10%{clip-path:inset(10% 0 70% 0);transform:translate(-.05em,-.05em)}20%{clip-path:inset(75% 0 18% 0);transform:translate(.01em,.025em)}30%{clip-path:inset(3% 0 92% 0);transform:translate(-.025em,.05em)}40%{clip-path:inset(55% 0 30% 0);transform:translate(.05em,-.01em)}50%{clip-path:inset(20% 0 65% 0);transform:translate(-.01em,-.025em)}60%{clip-path:inset(80% 0 10% 0);transform:translate(.025em,0)}70%{clip-path:inset(5% 0 88% 0);transform:translate(-.05em,.05em)}80%{clip-path:inset(40% 0 42% 0);transform:translate(.01em,-.01em)}90%{clip-path:inset(68% 0 22% 0);transform:translate(-.025em,0)}100%{clip-path:inset(15% 0 75% 0);transform:translate(.05em,.025em)}}
+
+/* Responsive adjustments remain the same */
+@media (max-width: 768px) { /* ... */ }
+@media (max-width: 480px) { /* ... */ }
