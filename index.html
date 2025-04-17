@@ -2,71 +2,675 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>:: CODE FRAGMENTATION ::</title>
-    <link rel="stylesheet" href="index.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Matrix Tetris</title>
+    <style>
+        /* Basic page styling */
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: #000; font-family: 'Consolas', 'Lucida Console', 'Courier New', monospace; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; touch-action: manipulation; }
+        canvas { display: block; position: absolute; top: 0; left: 0; cursor: default; }
+
+        /* Fullscreen prompt styling */
+        #fullscreen-prompt { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: lime; background-color: rgba(0, 0, 0, 0.85); padding: 25px; border: 1px solid lime; font-size: 1.6em; text-align: center; cursor: pointer; z-index: 10; transition: transform 0.05s ease-out, border-color 0.05s ease-out; line-height: 1.4; }
+        .version-text { display: block; font-size: 0.5em; opacity: 0.7; margin-top: 15px; }
+        .instructions-text {
+            display: block;
+            font-size: 0.45em; /* Smaller base font for instructions */
+            opacity: 0.8; /* Slightly more opaque for readability */
+            margin-top: 10px;
+            line-height: 1.5; /* Increased line height */
+            text-align: left;
+            padding-left: 10px;
+            white-space: pre-line; /* Respect line breaks and wrap */
+        }
+        .instructions-text strong { color: #afFaFf; display: block; margin-bottom: 3px; /* Space after titles */ } /* Style for control type labels */
+
+        /* Simple overlay for leaderboard - adjust as needed */
+        #leaderboard-overlay {
+            display: none; /* Hidden by default */
+            position: absolute;
+            bottom: 80px; /* Adjust vertical position */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 400px;
+            color: lime;
+            background-color: rgba(0, 20, 0, 0.7);
+            border: 1px solid lime;
+            padding: 10px;
+            font-size: 14px; /* Adjust font size */
+            line-height: 1.6;
+            text-align: left;
+            z-index: 5; /* Below prompt, above canvas maybe */
+            white-space: pre-line; /* Respect newlines */
+        }
+        #leaderboard-overlay h3 {
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+    </style>
 </head>
 <body>
-    <!-- Containers for Background Effects -->
-    <div id="matrix-rain-container"></div>
-    <div id="background-glitches">
-        <div class="glitch-bar gb1"></div>
-        <div class="glitch-bar gb2"></div>
-        <div class="glitch-bar gb3"></div>
-        <div class="glitch-bar gb4"></div>
-    </div>
-    <!-- End Background Effects -->
-
-    <!-- Scanlines div remains -->
-    <div class="scanlines"></div>
-
-    <div class="container">
-
-        <header class="main-header">
-            <div class="system-status">
-                 &gt; SYSTEM ONLINE :: MONITORING CODE STREAM
-            </div>
-            <a href="tetrix.html" class="main-link glitch-heavy" data-text="[ INITIATE RECONSTRUCTION ]">
-                [ INITIATE RECONSTRUCTION ]
-            </a>
-            <div class="system-code">ID: T3TR1X-FRAG // PROTOCOL: RECURSIVE</div>
-        </header>
-
-        <main class="content">
-            <section class="directive">
-                <h2 class="glitch-sub" data-text="// DIRECTIVE // DATA_STREAM_ANOMALY">// DIRECTIVE // DATA_STREAM_ANOMALY</h2>
-                <p>Core code stream fragmented. Geometric constructs descending erratically. Order must be re-established from chaos. Alignment is critical to prevent total data corruption.</p>
-                <p>Integrate falling code blocks. Form complete horizontal data lines across the active grid to purge corruption and stabilize the stream.</p>
-            </section>
-
-            <section class="interface-map">
-                <h2 class="glitch-sub" data-text="// INTERFACE // CONTROL_INPUTS"> // INTERFACE // CONTROL_INPUTS</h2>
-                <pre>
-[  ←  ] :: ROTATE CONSTRUCT (ANTI-CLOCKWISE)
-[  ↑  ] :: ROTATE CONSTRUCT (CLOCKWISE)
-[  →  ] :: SHIFT HORIZONTAL (+)
-[  ↓  ] :: ACCELERATE DESCENT
-
-[  P  ] :: SUSPEND FIELD / PAUSE SIMULATION
-                </pre>
-            </section>
-
-            <section class="objective">
-                <h2 class="glitch-sub" data-text="// OBJECTIVE // CORRUPTION_THRESHOLD">// OBJECTIVE // CORRUPTION_THRESHOLD</h2>
-                <p>Maximize completed data lines. Prevent construct accumulation exceeding grid apex. Failure results in irreversible stream corruption.</p>
-            </section>
-        </main>
-
-        <footer class="main-footer">
-            <p class="glitch" data-text=":: SIMULATION READY :: ENGAGE AT WILL ::">:: SIMULATION READY :: ENGAGE AT WILL ::</p>
-        </footer>
-
+    <canvas id="gameCanvas"></canvas>
+    <div id="fullscreen-prompt">
+        <span id="prompt-main-text">Tap or Press Enter to Start</span><br>
+        <span id="prompt-fullscreen-text">(Requires Fullscreen)</span>
+        <span class="version-text" id="prompt-version">v1.37-HS</span> <!-- Version bump -->
+        <span class="instructions-text" id="prompt-instructions">
+             <!-- Content set by JS with newlines -->
+        </span>
     </div>
 
-    <!-- Link the new JavaScript file -->
-    <script src="background-effects.js"></script>
+    <!-- Leaderboard Overlay Div -->
+    <div id="leaderboard-overlay">
+        <h3>High Scores</h3>
+        <div id="leaderboard-content">Loading...</div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <!-- Use compat libraries for easier integration with non-module script -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+
+    <script>
+        // --- Firebase Initialization ---
+        // IMPORTANT: Replace with your actual config values from the Firebase Console!
+        const firebaseConfig = {
+          apiKey: "AIzaSyDOdI-PlrR0iOwm_f2CSVzDrNLfPLCtL4Y", // KEEP YOUR ACTUAL KEY HERE
+          authDomain: "tetrix-d29b0.firebaseapp.com",
+          projectId: "tetrix-d29b0",
+          storageBucket: "tetrix-d29b0.appspot.com", // Check if correct in console
+          messagingSenderId: "460805453846",
+          appId: "1:460805453846:web:699f6a271e809ce60e9d37" // Check if correct in console
+          // measurementId is optional for Firestore
+        };
+
+        let db; // Declare db globally within the IIFE scope
+        try {
+            // Initialize Firebase
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore(); // Get Firestore instance
+            console.log("Firebase Initialized Successfully.");
+        } catch (error) {
+            console.error("Firebase Initialization Failed:", error);
+            // Handle initialization error (e.g., show a message)
+            alert("Error connecting to High Score service. Scores may not save.");
+        }
+        // --- End Firebase Initialization ---
+
+    (function() { // IIFE
+
+        // --- Console, Elements, Context ---
+        window.console = window.console || { log: function() {}, error: function() {}, warn: function() {} };
+        const canvas = document.getElementById('gameCanvas');
+        const promptElement = document.getElementById('fullscreen-prompt');
+        const promptMainText = document.getElementById('prompt-main-text');
+        const promptFullscreenText = document.getElementById('prompt-fullscreen-text');
+        const promptVersionText = document.getElementById('prompt-version');
+        const promptInstructionsText = document.getElementById('prompt-instructions');
+        // --- Leaderboard Elements ---
+        const leaderboardOverlay = document.getElementById('leaderboard-overlay');
+        const leaderboardContent = document.getElementById('leaderboard-content');
+        // --- End Leaderboard Elements ---
+        const ctx = canvas.getContext('2d');
+        if (!canvas || !promptElement || !ctx || !promptMainText || !promptFullscreenText || !promptVersionText || !promptInstructionsText || !leaderboardOverlay || !leaderboardContent) {
+             alert("CRITICAL ERROR: UI Elements missing.");
+             return;
+        }
+        console.log(">>> Matrix Tetris STARTING <<<");
+
+        const ORIGINAL_PROMPT_MAIN = promptMainText.textContent;
+        const ORIGINAL_PROMPT_FS = promptFullscreenText.textContent;
+        const ORIGINAL_PROMPT_VERSION = promptVersionText.textContent;
+        const ORIGINAL_PROMPT_INSTRUCTIONS = `<strong>Controls:</strong>
+<strong>Keyboard:</strong>
+ P: Pause
+ ← → : Move
+ ↓ : Soft Drop
+ ↑ : Hard Drop
+ Space: Rotate
+ Shift: Hold/Swap
+
+<strong>Touch:</strong>
+ Bottom-Left Icon: Pause
+ Tap Screen: Rotate
+ Tap Hold/Next Area: Swap/Ignore
+ Slide Finger: Move
+ Flick Up/Down: Hard Drop
+
+(Lock Delay Active - No Infinite Spin)`;
+
+        promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS;
+
+
+        // --- Audio Context & Sound ---
+        let audioCtx = null;
+        function initAudio() { if (!audioCtx && (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined')) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); console.log("AudioContext initialized."); } catch (e) { console.error("Error initializing AudioContext:", e); audioCtx = null; } } if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume().then(() => { console.log("AudioContext resumed!"); }).catch(e => console.error("AudioContext resume failed:", e)); } }
+        function playTone(frequency = 440, duration = 50, type = 'square', volume = 0.08) {
+            if (!settings_sfxEnabled) return;
+            volume *= 0.9; if (!audioCtx || audioCtx.state === 'suspended') { initAudio(); if (!audioCtx || audioCtx.state !== 'running') { return; } } if (audioCtx.state !== 'running') { return; } try { const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.setValueAtTime(frequency, audioCtx.currentTime); g.gain.setValueAtTime(volume, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000); o.connect(g); g.connect(audioCtx.destination); o.start(audioCtx.currentTime); o.stop(audioCtx.currentTime + duration / 1000); } catch (e) { console.error("Error playing tone:", e); } }
+        const SOUNDS = { ROTATE: () => playTone(300, 30, 'triangle', 0.06), MOVE: () => playTone(150, 20, 'sine', 0.04), LAND: () => playTone(100, 40, 'square', 0.08), LINE_CLEAR: () => playTone(600, 100, 'sawtooth', 0.1), HARD_DROP: () => playTone(80, 60, 'square', 0.1), GAME_OVER: () => { playTone(200, 300, 'sawtooth', 0.15); setTimeout(() => playTone(150, 400, 'sawtooth', 0.15), 150); }, HOLD_SWAP: () => playTone(450, 70, 'sine', 0.07), SOFT_DROP: () => playTone(90, 15, 'square', 0.03), TETRIS_CLEAR: () => { const b = 500, i = 60, d = 80, v = 0.12; playTone(b, d, 'triangle', v); setTimeout(() => playTone(b * 1.25, d, 'triangle', v), i * 1); setTimeout(() => playTone(b * 1.5, d, 'triangle', v), i * 2); setTimeout(() => playTone(b * 2, d * 1.5, 'triangle', v), i * 3); }, UI_CLICK: () => playTone(500, 25, 'sine', 0.05), PAUSE_ON: () => playTone(350, 50, 'sine', 0.07), PAUSE_OFF: () => playTone(550, 50, 'sine', 0.07), };
+        function playStartupSequence() { const b = 300, r = 600, d = 40, v = 0.05, dl = 45; for (let i = 0; i < 10; i++) { setTimeout(() => { const f = b + Math.random() * r; playTone(f, d, 'sine', v); }, i * dl); } }
+
+        // --- Game Config ---
+        let width, height; const boardWidth = 10, boardHeight = 20; let blockSize = 0, boardXOffset = 0; const boardYOffset = 10; let board = [], currentPiece = null, currentRow = 0, currentCol = 0;
+        let score = 0, totalLinesCleared = 0, highScore = 0; // highScore here is local browser high score
+        let gameOver = false; let isPaused = true;
+        let matrixStreams = {};
+        let scoreSubmitted = false; // Flag to prevent multiple submissions per game over
+
+        // --- Tetrominoes & Colors ---
+        const PIECES = [ [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]], [[0, 1, 1], [1, 1, 0]], [[1, 1, 0], [0, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]] ];
+        const BASE_COLORS_HSL = [ [120, 60, 50], [120, 70, 40], [120, 80, 60], [120, 50, 30], [120, 90, 70], [120, 65, 45], [120, 75, 55] ];
+
+        // --- Settings ---
+        let settings_ghostAlpha = 0.05;
+        let settings_useWireframeBlocks = false;
+        let settings_sfxEnabled = true;
+        let settings_boardBackgroundAlpha = 0.5;
+
+        // --- Visual Settings ---
+        const BLOCK_BASE_ALPHA = 0.42; const BLOCK_SHIMMER_SPEED = 0.003; const BLOCK_SHIMMER_AMOUNT = 0.1; const BLOCK_FLICKER_CHANCE = 0.0005; const BLOCK_FLICKER_COLOR = 'rgba(255, 255, 255, 0.9)';
+
+        // --- Game Speed & Timing ---
+        const initialDropInterval = 450; let dropInterval = initialDropInterval; const minDropInterval = 100; const LINES_PER_SPEED_INCREASE = 10; const SPEED_UP_MULTIPLIER = 0.90; const LOCK_DELAY_DURATION = 500;
+        let lastDropTime = 0; let lockDelayStartTime = 0; let isLockDelayActive = false; let nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
+
+        // --- Matrix Background ---
+        const MATRIX_FIXED_SPAWN_CHANCE = 0.07; const MATRIX_GLOBAL_FADE_FACTOR = 0.15; const MATRIX_BASE_SPEED = 2.5; const MATRIX_SPEED_VARIATION = 8.0; const MATRIX_MIN_FONT_SIZE = 8; const MATRIX_MAX_FONT_SIZE = 18; const MATRIX_COLUMN_WIDTH_MULTIPLIER = 0.9; const MATRIX_TRAIL_MIN_LIGHTNESS = 18; const MATRIX_TRAIL_MAX_LIGHTNESS = 55; const MATRIX_MAIN_COLOR_HUE = 120;
+        const MATRIX_katakana = 'ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶ'; const MATRIX_latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-*=<>()[]!?@#$&|:.;^~_'; const MATRIX_characterPool = (MATRIX_katakana + MATRIX_latin).split('');
+
+        // --- UI Settings ---
+        const INFO_BOX_MARGIN = 5; const INFO_BOX_ALPHA = 0.3; const INFO_BOX_BORDER_ALPHA = 0.6; const INFO_BOX_LABEL_ALPHA = 0.8; const MINI_PIECE_SCALE = 0.7;
+        const SETTINGS_ICON_SIZE = 30; const SETTINGS_ICON_MARGIN = 15;
+        let settingsButtonRect = { x: 0, y: 0, width: 0, height: 0 }; let pauseMenuCloseButtonRect = { x: 0, y: 0, width: 0, height: 0 };
+        const SCORE_LINES_Y_MARGIN = 15; const SCORE_LINES_FONT_SIZE = 20; const SCORE_GLITCH_CHANCE = 0.05; const SCORE_GLITCH_INTENSITY = 0.3; const SCORE_GLITCH_OFFSET = 2; const SCORE_LINES_BG_OPACITY = 0.5; const SCORE_LINES_BG_PADDING_X = 10; const SCORE_LINES_BG_PADDING_Y = 4; const SCORE_LINES_GAP = 25; const SCORE_LABEL = "SCORE:"; const LINES_LABEL = "LINES:"; const SCORE_COLOR_BASE = 'hsl(120, 100%, 75%)'; const SCORE_COLOR_GLITCH = 'hsl(100, 100%, 85%)'; const SCORE_GLITCH_CHARS = MATRIX_characterPool;
+        const GAME_OVER_TITLE_FONT_SIZE = 50; const GAME_OVER_STATS_FONT_SIZE = 30; const GAME_OVER_SUBTEXT_FONT_SIZE = 20;
+        const PAUSE_MENU_BG_ALPHA = 0.85; const PAUSE_MENU_TEXT_COLOR = 'lime';
+        const PAUSE_MENU_TITLE_FONT_SIZE = 32;
+        const PAUSE_MENU_ITEM_FONT_SIZE = 18;
+        const PAUSE_MENU_VALUE_FONT_SIZE = 16;
+        const PAUSE_MENU_ITEM_GAP = 55;
+        const PAUSE_MENU_SLIDER_WIDTH_RATIO = 0.5;
+        const PAUSE_MENU_SLIDER_HEIGHT = 12;
+        const PAUSE_MENU_SLIDER_HANDLE_SIZE = 18;
+        const PAUSE_MENU_BUTTON_PADDING_X = 12; const PAUSE_MENU_BUTTON_PADDING_Y = 6;
+        const PAUSE_MENU_CLOSE_BUTTON_SIZE = 30;
+        const PAUSE_MENU_CLOSE_BUTTON_MARGIN = 12;
+        let pauseMenuElements = {}; let activeSlider = null;
+
+        // --- Touch Controls ---
+        const SWIPE_THRESHOLD = 40; const SWIPE_TIME_LIMIT = 500; const TAP_TIME_LIMIT = 280; const TAP_MOVEMENT_THRESHOLD = 30; const SOFT_DROP_START_THRESHOLD = 20; const SOFT_DROP_MOVE_PER_PIXEL = 0.02; const HORIZONTAL_MOVE_PIXEL_THRESHOLD = 0.7;
+        let touchStartX = 0, touchStartY = 0, touchStartTime = 0; let isDraggingDown = false, isDraggingHorizontally = false; let lastSoftDropY = 0, lastHorizontalMoveX = 0; let horizontalMoveAccumulator = 0; let touchIdentifier = null;
+
+        // --- Visual Effects ---
+        const FLASH_DURATION = 120; const SPEED_UP_FLASH_DURATION = 100; const TETRIS_FLASH_DURATION = 250; let flashEndTime = 0, speedUpFlashEndTime = 0, tetrisFlashEndTime = 0;
+        const FLASH_COLOR = 'rgba(180, 255, 180, 0.3)'; const SPEED_UP_FLASH_COLOR = 'rgba(255, 255, 100, 0.4)'; const TETRIS_FLASH_COLOR = 'rgba(150, 150, 255, 0.5)';
+
+        // --- Game State ---
+        let nextPiece = null; let heldPiece = null; let canSwap = true; let nextBoxRect = { x: 0, y: 0, width: 0, height: 0 }; let holdBoxRect = { x: 0, y: 0, width: 0, height: 0 };
+
+        // --- Visuals ---
+        const TITLE_TEXT = "TETЯIX"; const TITLE_FONT_SIZE_RATIO = 0.1; const TITLE_ALPHA = 0.15; const TITLE_COLOR = 'hsl(120, 40%, 30%)';
+
+        // ===========================================
+        // LOCAL STORAGE FUNCTIONS (For local high score)
+        // ===========================================
+        const LS_PREFIX = 'matrixTetris_';
+        function saveToLocalStorage(key, value) { try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); } catch (e) { console.error("LocalStorage Save Error:", e); } }
+        function loadFromLocalStorage(key, defaultValue) { try { const storedValue = localStorage.getItem(LS_PREFIX + key); return storedValue !== null ? JSON.parse(storedValue) : defaultValue; } catch (e) { console.error("LocalStorage Load Error:", e); return defaultValue; } }
+        function loadSettings() {
+            highScore = loadFromLocalStorage('highScore', 0); // This is now just the *local* high score
+            settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
+            settings_useWireframeBlocks = loadFromLocalStorage('useWireframeBlocks', false);
+            settings_sfxEnabled = loadFromLocalStorage('sfxEnabled', true);
+            settings_boardBackgroundAlpha = clamp(loadFromLocalStorage('boardBackgroundAlpha', 0.5), 0.10, 1.0);
+            console.log("Settings Loaded:", { highScore, settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
+        }
+        function saveSettings() {
+             // saveToLocalStorage('highScore', highScore); // Don't save local high score if using shared one primarily
+             saveToLocalStorage('ghostAlpha', settings_ghostAlpha);
+             saveToLocalStorage('useWireframeBlocks', settings_useWireframeBlocks);
+             saveToLocalStorage('sfxEnabled', settings_sfxEnabled);
+             saveToLocalStorage('boardBackgroundAlpha', settings_boardBackgroundAlpha);
+        }
+        function saveLocalHighScore() { if (score > highScore) { highScore = score; saveToLocalStorage('highScore', highScore); console.log(`--- NEW LOCAL HIGH SCORE: ${highScore} ---`); } } // Renamed for clarity
+
+        // ===========================================
+        // FIRESTORE FUNCTIONS (For Shared High Scores)
+        // ===========================================
+        async function submitHighScore(name, scoreValue) {
+            if (!db) { console.error("Firestore not initialized. Cannot submit score."); return; }
+            if (!name || typeof name !== 'string' || name.trim().length === 0 || !scoreValue || typeof scoreValue !== 'number' || scoreValue <= 0) {
+                console.log("Invalid name or score for submission.");
+                return;
+            }
+            // Prevent accidental multiple submissions
+            if (scoreSubmitted) {
+                 console.log("Score already submitted for this game.");
+                 return;
+            }
+            scoreSubmitted = true; // Set flag
+
+            const cleanedName = name.trim().substring(0, 15); // Limit name length and trim whitespace
+            console.log(`Submitting score to Firestore: ${cleanedName} - ${scoreValue}`);
+
+            try {
+                await db.collection("highscores").add({
+                    name: cleanedName,
+                    score: scoreValue,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp() // Use server time
+                });
+                console.log("High score submitted successfully!");
+                // Refresh the leaderboard after submission
+                displayLeaderboard();
+            } catch (error) {
+                console.error("Error adding high score: ", error);
+                scoreSubmitted = false; // Allow retry if submission failed? Maybe not needed.
+                // Optionally inform the user submission failed
+            }
+        }
+
+        async function displayLeaderboard(limit = 10) {
+            if (!db) {
+                console.error("Firestore not initialized. Cannot display leaderboard.");
+                leaderboardContent.textContent = "Score service unavailable.";
+                leaderboardOverlay.style.display = 'block';
+                return;
+            }
+             if (!leaderboardOverlay || !leaderboardContent) {
+                console.error("Leaderboard DOM elements not found.");
+                return;
+            }
+
+            console.log("Fetching leaderboard...");
+            leaderboardContent.textContent = "Loading..."; // Show loading state
+            leaderboardOverlay.style.display = 'block'; // Make overlay visible
+
+            try {
+                const scoresRef = db.collection("highscores");
+                const snapshot = await scoresRef.orderBy("score", "desc").limit(limit).get();
+
+                if (snapshot.empty) {
+                    console.log("No high scores found.");
+                    leaderboardContent.textContent = "No high scores yet!";
+                    return;
+                }
+
+                let rank = 1;
+                let leaderboardHTML = ""; // Build HTML string
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // Basic escaping for safety, consider a library for complex cases
+                    const safeName = data.name.replace(/</g, "<").replace(/>/g, ">");
+                    leaderboardHTML += `${rank}. ${safeName}: ${data.score}\n`; // Use newline for pre-line style
+                    rank++;
+                });
+
+                leaderboardContent.textContent = leaderboardHTML.trim(); // Set text content
+
+            } catch (error) {
+                console.error("Error getting high scores: ", error);
+                leaderboardContent.textContent = "Error loading scores.";
+            }
+        }
+        // --- End Firestore Functions ---
+
+
+        // ===========================================
+        // HELPER FUNCTIONS
+        // ===========================================
+        function MATRIX_getRandomChar(pool = MATRIX_characterPool) { return pool[Math.floor(Math.random() * pool.length)]; }
+        function glitchText(text, intensity = 0.1, charPool = SCORE_GLITCH_CHARS) { if (!text || text.length === 0 || charPool.length === 0) return text; return text.split('').map(char => (Math.random() < intensity && char !== ' ' && char !== ':' && char !== '\n' && char !== '<' && char !== '>') ? charPool[Math.floor(Math.random() * charPool.length)] : char).join(''); }
+        function updatePromptGlitches() { /* ... (keep existing code) ... */ }
+        function resetPromptGlitches() { /* ... (keep existing code) ... */ }
+        function isPointInRect(x, y, rect) { return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height; }
+        function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+        function resumeGame() { if (!isPaused || gameOver) return; isPaused = false; if (gameStartTime > 0) { const d = performance.now() - (lastFrameTime || gameStartTime); lastDropTime += d; if (isLockDelayActive) lockDelayStartTime += d; } leaderboardOverlay.style.display = 'none'; SOUNDS.PAUSE_OFF(); } // Hide leaderboard on resume
+        function pauseGame() { if (isPaused || gameOver) return; isPaused = true; activeSlider = null; SOUNDS.PAUSE_ON(); }
+        function togglePause() { if (gameOver || gameStartTime === 0) return; if (isPaused) { resumeGame(); } else { pauseGame(); } }
+        function wrapText(context, text, x, y, maxWidth, lineHeight) { /* ... (keep existing code) ... */ }
+
+        // ===========================================
+        // MATRIX BACKGROUND CODE (Stable)
+        // ===========================================
+        class MATRIX_Character { /* ... (keep existing code) ... */ }
+        class MATRIX_Stream { /* ... (keep existing code) ... */ }
+        function MATRIX_setupStreams() { /* ... (keep existing code) ... */ }
+        function MATRIX_drawGlobalRain(ctx) { /* ... (keep existing code) ... */ }
+
+        // ===========================================
+        // TETRIS GAME LOGIC
+        // ===========================================
+        function createBoard() { board = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0)); }
+        function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
+        function handleGameOver() { // Extracted game over logic
+             gameOver = true;
+             isPaused = true; // Effectively pauses game loop updates
+             saveLocalHighScore(); // Save to browser's local storage
+             SOUNDS.GAME_OVER();
+             scoreSubmitted = false; // Reset submission flag for the next game
+             // Display leaderboard immediately on game over
+             displayLeaderboard();
+        }
+        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { console.error(`!!! GAME OVER ON SPAWN !!!`); handleGameOver(); } else { lastDropTime = performance.now(); } }
+        function rotateMatrix(matrix) { /* ... (keep existing code) ... */ return n; }
+        function rotatePiece() { /* ... (keep existing code) ... */ }
+        function isValidMove(shape, r, c) { /* ... (keep existing code) ... */ return true; }
+        function movePiece(dX, dY) { /* ... (keep existing code) ... */ return { moved: false, needsLock: false }; }
+        function hardDrop() { /* ... (keep existing code) ... */ }
+        function softDrop() { /* ... (keep existing code) ... */ return false; }
+        function lockPiece() { if(!currentPiece || isPaused || gameOver) return; isLockDelayActive = false; lockDelayStartTime = 0; let pL = false; for(let y=0; y<currentPiece.shape.length; y++) { for(let x=0; x<currentPiece.shape[y].length; x++) { if(currentPiece.shape[y][x]) { let bR = currentRow + y; let bC = currentCol + x; if (bC >= 0 && bC < boardWidth && bR < boardHeight) { if (bR < 0) { console.log("GAME OVER (lockPiece - block above board)"); handleGameOver(); break; } else { board[bR][bC] = currentPiece.colorIndex + 1; pL = true; } } } } if(gameOver) { currentPiece = null; return; } } if (pL) { SOUNDS.LAND(); clearLines(); } else { console.warn("lockPiece called but no blocks landed?"); } if (!gameOver) { spawnPiece(); } else { currentPiece = null; } }
+        function clearLines() { /* ... (keep existing code) ... */ return cl; }
+        function calculateGhostPosition() { /* ... (keep existing code) ... */ return gR;}
+        function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { console.log("GAME OVER (Swap)"); handleGameOver(); } } canSwap = false; }
+
+        // ===========================================
+        // DRAWING FUNCTIONS
+        // ===========================================
+        function drawBlock(r, c, ci, g = false, t = performance.now(), isMini = false, miniBlockSize = blockSize) { /* ... (keep existing code) ... */ }
+        function drawBoard(timestamp){/* ... (keep existing code) ... */}
+        function drawPiece(shape, r, c, ci, g = false, t){/* ... (keep existing code) ... */}
+        function drawMiniPiece(piece, boxRect, timestamp) { /* ... (keep existing code) ... */ }
+        function drawInfoBoxes(timestamp) { /* ... (keep existing code) ... */ }
+        function drawGame(timestamp){ /* ... (keep existing code) ... */ }
+        function drawScoreAndLines() { /* ... (keep existing code) ... */ }
+
+        function drawGameOverScreen(){
+            if(!ctx||!width||!height)return;
+            const cX = width / 2;
+            const cY = height / 2;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw standard Game Over text
+            ctx.font = `bold ${GAME_OVER_TITLE_FONT_SIZE}px monospace`;
+            ctx.fillStyle = 'red';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(glitchText("GAME OVER", 0.1), cX, cY - 60);
+
+            ctx.font = `bold ${GAME_OVER_STATS_FONT_SIZE}px monospace`;
+            ctx.fillStyle = SCORE_COLOR_GLITCH;
+            ctx.textBaseline = 'top';
+            let sS = score.toString();
+            let dSS = glitchText(sS, SCORE_GLITCH_INTENSITY * 1.5);
+            ctx.fillText(`Score: ${dSS}`, cX, cY - 10);
+
+            let lS = totalLinesCleared.toString();
+            let dLS = glitchText(lS, SCORE_GLITCH_INTENSITY * 1.2);
+            ctx.fillText(`Lines: ${dLS}`, cX, cY + GAME_OVER_STATS_FONT_SIZE + 5);
+
+            // Display Local High Score
+            if (highScore > 0) {
+                ctx.font = `${GAME_OVER_SUBTEXT_FONT_SIZE}px monospace`;
+                ctx.fillStyle = 'hsl(120, 80%, 60%)';
+                ctx.fillText(`Local Best: ${highScore}`, cX, cY + GAME_OVER_STATS_FONT_SIZE * 2 + 20);
+            }
+
+            // Restart prompt (always shown)
+            ctx.font = `${GAME_OVER_SUBTEXT_FONT_SIZE}px monospace`;
+            ctx.fillStyle = 'white';
+            ctx.fillText("Tap or Press Enter to Restart", cX, cY + GAME_OVER_STATS_FONT_SIZE * 2 + 60);
+
+            // Prompt for name submission (using prompt() for simplicity)
+            // This part is usually triggered by interaction (Enter/Tap) in handleStartInteraction
+            // But we make sure the leaderboard is displayed via handleGameOver() calling displayLeaderboard()
+
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+
+            // Ensure leaderboard overlay is visible (it's made visible in displayLeaderboard)
+             if (leaderboardOverlay) leaderboardOverlay.style.display = 'block';
+        }
+
+        function drawTitle() { /* ... (keep existing code) ... */ }
+        function drawSettingsIcon() { /* ... (keep existing code) ... */ }
+        function drawPauseMenu() { /* ... (keep existing code, including wrapText call) ... */ }
+
+        // ===========================================
+        // Game Loop
+        // ===========================================
+        let gameStartTime = 0; let lastFrameTime = 0; const MAX_FPS = 60; const MIN_FRAME_TIME = 1000 / MAX_FPS;
+        function gameLoop(timestamp) {
+            requestAnimationFrame(gameLoop);
+            const elapsed = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+            const now = performance.now();
+
+            // Game Logic Updates (only if not paused AND not game over)
+            if (!isPaused && !gameOver) {
+                if (currentPiece) {
+                    if (isLockDelayActive) {
+                        if (now - lockDelayStartTime > LOCK_DELAY_DURATION) {
+                            lockPiece();
+                        }
+                    } else if (now - lastDropTime > dropInterval) {
+                        const mR = movePiece(0, 1);
+                        if (mR.needsLock) {
+                            isLockDelayActive = true;
+                            lockDelayStartTime = now;
+                        } else if (mR.moved) {
+                            lastDropTime = now;
+                        } else {
+                            // Piece didn't move down, but wasn't locked yet either.
+                            // Maybe it landed on something. Check if lock delay should start.
+                             if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
+                                 isLockDelayActive = true;
+                                 lockDelayStartTime = now;
+                             } else {
+                                 // If it can still move down, reset drop timer
+                                 lastDropTime = now;
+                             }
+                        }
+                    }
+                }
+            } else if (isPaused && !gameOver && gameStartTime === 0) {
+                // Glitch effect on initial prompt
+                updatePromptGlitches();
+            }
+
+            // Drawing Updates (always run)
+            ctx.fillStyle = `rgba(0, 0, 0, ${MATRIX_GLOBAL_FADE_FACTOR})`;
+            ctx.fillRect(0, 0, width, height);
+            MATRIX_drawGlobalRain(ctx);
+            drawTitle();
+
+            if (gameOver) {
+                drawGameOverScreen();
+                if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
+            }
+            else if (isPaused) {
+                if (gameStartTime === 0) { // Initial prompt screen
+                    if (promptElement.style.display === 'none') promptElement.style.display = 'block';
+                    if (leaderboardOverlay.style.display !== 'none') leaderboardOverlay.style.display = 'none'; // Hide leaderboard on prompt
+                } else { // Pause menu screen
+                    drawGame(timestamp);
+                    drawInfoBoxes(timestamp);
+                    drawScoreAndLines();
+                    drawPauseMenu();
+                    if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
+                    if (leaderboardOverlay.style.display !== 'none') leaderboardOverlay.style.display = 'none'; // Hide leaderboard on pause
+                }
+            }
+            else { // Game is running
+                drawGame(timestamp);
+                drawInfoBoxes(timestamp);
+                drawScoreAndLines();
+                drawSettingsIcon();
+                if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
+                if (leaderboardOverlay.style.display !== 'none') leaderboardOverlay.style.display = 'none'; // Hide leaderboard during play
+            }
+
+            // Flash effects
+            if (now < flashEndTime) { ctx.fillStyle = FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
+            if (now < speedUpFlashEndTime) { ctx.fillStyle = SPEED_UP_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
+            if (now < tetrisFlashEndTime) { ctx.fillStyle = TETRIS_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
+        }
+
+
+        // ===========================================
+        // Setup & Sizing
+        // ===========================================
+        function calculateSizes() { /* ... (keep existing code) ... */ }
+        function setup(isInitialSetup = false) {
+             console.log("--- Running Setup ---", "isInitial:", isInitialSetup);
+             width = window.innerWidth; height = window.innerHeight;
+             canvas.width = width; canvas.height = height;
+             if (isInitialSetup) {
+                 loadSettings(); // Load local settings (incl. local high score)
+             }
+             calculateSizes();
+             MATRIX_setupStreams();
+             createBoard();
+             score = 0;
+             totalLinesCleared = 0;
+             gameOver = false;
+             scoreSubmitted = false; // Reset flag on new setup
+             dropInterval = initialDropInterval;
+             nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
+             flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0;
+             isLockDelayActive = false; lockDelayStartTime = 0;
+             currentPiece = null; nextPiece = getRandomPiece(); heldPiece = null;
+             canSwap = true;
+
+             if (isInitialSetup) {
+                 isPaused = true;
+                 gameStartTime = 0;
+                 lastFrameTime = 0;
+                 promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS;
+                 promptElement.style.display = 'block';
+                 leaderboardOverlay.style.display = 'none'; // Ensure hidden initially
+                 resetPromptGlitches();
+                 console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime});
+             } else { // Starting/Restarting game
+                 console.log("Setup Start Game: ...");
+                 try {
+                     playStartupSequence();
+                     isPaused = false;
+                     spawnPiece(); // This might set gameOver if spawn fails
+                     if (!gameOver) { // Only set start time if game didn't end immediately
+                         gameStartTime = performance.now();
+                         lastDropTime = gameStartTime;
+                         lastFrameTime = gameStartTime;
+                     } else {
+                         isPaused = true; // Ensure paused if game over on spawn
+                     }
+                     promptElement.style.display = 'none';
+                     leaderboardOverlay.style.display = 'none'; // Ensure hidden on start
+                     resetPromptGlitches();
+                     console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime});
+                 } catch (error) {
+                     console.error("!!!! ERROR DURING setup(false) !!!!", error);
+                     isPaused = true;
+                     gameOver = true;
+                     leaderboardOverlay.style.display = 'none'; // Hide on error too
+                     ctx.fillStyle = 'red'; ctx.font = '20px monospace'; ctx.textAlign = 'center';
+                     ctx.fillText("ERROR DURING STARTUP", width/2, height/2); ctx.textAlign = 'left';
+                     if (promptElement) promptElement.style.display = 'none';
+                 }
+             }
+             console.log(`--- Setup Complete W:${width} H:${height} ---`);
+         }
+
+        // ===========================================
+        // Fullscreen & Start
+        // ===========================================
+        function requestAppFullscreen() { /* ... (keep existing code) ... */ }
+        function exitAppFullscreen() { /* ... (keep existing code) ... */ }
+        function toggleFullscreen() { /* ... (keep existing code) ... */ }
+
+        function handleStartInteraction() {
+            // Handles tap/enter on the initial prompt OR the game over screen
+            if (gameStartTime === 0 && !gameOver) { // Start initial game
+                console.log(">>> Start Interaction <<<");
+                initAudio(); // Initialize audio context on user interaction
+                setup(false); // Run setup for starting the game
+            } else if (gameOver) { // Restart game OR submit score
+                console.log(">>> Restart/Submit Interaction <<<");
+                initAudio();
+
+                if (score > 0 && !scoreSubmitted) {
+                     // Prompt for name ONLY on the restart interaction if score > 0 and not submitted
+                     const playerName = prompt(`Game Over! Score: ${score}\nEnter name for leaderboard (max 15 chars):`, "Player");
+                     if (playerName) {
+                         submitHighScore(playerName, score); // Submit score first
+                         // Score submission now calls displayLeaderboard()
+                         // Restart happens after prompt closes regardless of input
+                         setup(false); // Restart the game
+                     } else {
+                         // User cancelled prompt or entered nothing, just restart
+                         setup(false);
+                     }
+                 } else {
+                      // No score to submit, or already submitted, just restart
+                      setup(false);
+                 }
+            }
+        }
+
+
+        // ===========================================
+        // Pause Menu Interaction
+        // ===========================================
+        function handlePauseMenuInteraction(x, y, isTapEnd = false) { /* ... (keep existing code) ... */ return interactedWithElement || !!activeSlider; }
+
+        // ===========================================
+        // Event Listeners
+        // ===========================================
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            initAudio(); // Init audio on first interaction
+            if (gameOver) {
+                // Game over screen tap triggers restart/submit flow
+                handleStartInteraction();
+                return;
+            }
+            // ... (rest of touchstart logic remains the same) ...
+            const touch = e.changedTouches[0]; if (!touch) return; const tX = touch.clientX; const tY = touch.clientY; if (isPaused && gameStartTime > 0) { touchIdentifier = touch.identifier; if (handlePauseMenuInteraction(tX, tY, false)) { return; } } else if (!isPaused && !gameOver) { if (isPointInRect(tX, tY, settingsButtonRect)) { togglePause(); touchIdentifier = null; return; } touchIdentifier = touch.identifier; touchStartX = tX; touchStartY = tY; touchStartTime = performance.now(); isDraggingDown = false; isDraggingHorizontally = false; lastSoftDropY = tY; lastHorizontalMoveX = tX; horizontalMoveAccumulator = 0; }
+         }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => { /* ... (keep existing code) ... */ }, { passive: false });
+        canvas.addEventListener('touchend', (e) => { /* ... (keep existing code, note game over handled in touchstart) ... */ }, { passive: false });
+        canvas.addEventListener('touchcancel', (e) => { /* ... (keep existing code) ... */ }, { passive: false });
+
+        window.addEventListener('keydown', (e) => {
+            // Handle Enter key on prompt or game over screen
+            if ((isPaused && gameStartTime === 0 && promptElement.style.display !== 'none') || gameOver) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleStartInteraction(); // Centralized handler
+                    return;
+                }
+            }
+            // ... (rest of keydown logic remains the same) ...
+             if (e.key.toLowerCase() === 'p') { e.preventDefault(); togglePause(); return; } if (isPaused || gameOver || !currentPiece) return; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Shift', 'w', 'a', 's', 'd'].includes(e.key) || e.code === 'Space') { e.preventDefault(); initAudio(); switch (e.key.toLowerCase()) { case 'arrowleft': case 'a': if(movePiece(-1, 0).moved) SOUNDS.MOVE(); break; case 'arrowright': case 'd': if(movePiece(1, 0).moved) SOUNDS.MOVE(); break; case 'arrowdown': case 's': softDrop(); break; case 'arrowup': case 'w': hardDrop(); break; case ' ': case 'spacebar': rotatePiece(); break; case 'shift': swapPiece(); break; } }
+        });
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameOver) {
+                if (e.button === 0) { // Left click on game over screen
+                    handleStartInteraction();
+                }
+                return;
+            }
+            // ... (rest of mousedown logic remains the same) ...
+            const mX = e.clientX; const mY = e.clientY; initAudio(); if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(mX, mY, false)) { e.preventDefault(); } return; } if (!isPaused && !gameOver) { if (isPointInRect(mX, mY, settingsButtonRect)) { togglePause(); e.preventDefault(); return; } if (e.button === 0) { let tH = (holdBoxRect.width > 0 && isPointInRect(mX, mY, holdBoxRect)); let tN = (nextBoxRect.width > 0 && isPointInRect(mX, mY, nextBoxRect)); if (tH) { swapPiece(); e.preventDefault(); } else if (!tN) { rotatePiece(); e.preventDefault(); } } else if (e.button === 2) { swapPiece(); e.preventDefault(); } }
+        });
+        canvas.addEventListener('mousemove', (e) => { /* ... (keep existing code) ... */ });
+        canvas.addEventListener('mouseup', (e) => { /* ... (keep existing code) ... */ });
+        window.addEventListener('resize', () => { /* ... (keep existing code) ... */ });
+        promptElement.addEventListener('click', handleStartInteraction); // Handles click on initial prompt
+
+        // --- Initial Setup ---
+        setup(true); // Run initial setup
+        requestAnimationFrame(gameLoop); // Start the game loop
+        console.log(">>> Matrix Tetris Initialized (Paused - Awaiting Interaction) <<<");
+
+    })(); // End of IIFE
+    </script>
 </body>
 </html>
