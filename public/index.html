@@ -26,9 +26,47 @@
         }
         .instructions-text { /* Inherits from #fullscreen-prompt */
             display: block; font-size: 0.45em; opacity: 0.8; margin-top: 10px;
-            line-height: 1.5; text-align: left; padding-left: 10px; white-space: pre-line;
+            line-height: 1.5; text-align: left; padding-left: 10px; white-space: pre-line; /* Fallback, pre below overrides */
         }
         .instructions-text strong { color: #afFaFf; display: block; margin-bottom: 3px; } /* Inherits font */
+
+        #prompt-fullscreen-text { display: none; } /* Hide (Requires Fullscreen) text */
+
+        /* --- ADDED: Media Query for smaller screens --- */
+        @media (max-width: 600px) {
+            #fullscreen-prompt {
+                width: 85%; /* Make prompt wider on small screens */
+                padding: 15px; /* Reduce padding slightly */
+                font-size: 1.5em; /* Adjusted font size for better readability */
+            }
+            .instructions-text {
+                font-size: 0.5em; /* Adjusted instruction font size */
+            }
+        }
+        /* --- END Media Query --- */
+
+        /* --- ADDED: New High Score Fanfare --- */
+        #new-highscore-fanfare {
+            display: none; /* Hidden by default */
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0; /* Cover screen */
+            background-color: rgba(0, 20, 0, 0.95); /* Dark green semi-transparent */
+            color: lime;
+            z-index: 25; /* Above game over */
+            display: flex; /* Use flexbox for centering */
+            align-items: center; /* Center vertically */
+            justify-content: center; /* Center horizontally */
+            text-align: center;
+            font-family: 'Courier', 'Courier New', monospace;
+            font-size: 3.5em; /* Large text */
+            font-weight: bold;
+            text-shadow: 0 0 12px rgba(0, 255, 0, 0.7); /* Stronger glow */
+            line-height: 1.2;
+            padding: 20px;
+            box-sizing: border-box;
+            /* Add transition for smoother effect changes */
+            transition: opacity 0.1s ease-in-out, color 0.1s ease-in-out;
+        }
 
         /* High Score Display */
         #highScoreDisplay {
@@ -162,6 +200,11 @@
         <button id="restart-button">Restart Game</button>
     </div>
 
+    <!-- ADDED: New High Score Fanfare Element -->
+    <div id="new-highscore-fanfare" style="display: none;">
+        <!-- Content set by JS -->
+    </div>
+
     <script>
     (function() { // IIFE
 
@@ -195,26 +238,38 @@
         }
         console.log(">>> Matrix Tetris STARTING <<<");
 
-        const ORIGINAL_PROMPT_MAIN = promptMainText.textContent;
+        // <<< UPDATED: Using spans with display:block for centering >>>
+        const ORIGINAL_PROMPT_MAIN = '<span style="display: block;">TAP : : CLICK</span><span style="display: block;">[ENTER]</span>';
         const ORIGINAL_PROMPT_FS = promptFullscreenText.textContent;
-        const ORIGINAL_PROMPT_VERSION = promptVersionText.textContent;
-        const ORIGINAL_PROMPT_INSTRUCTIONS = `<strong>Controls:</strong>
-<strong>Keyboard:</strong>
- P: Pause
- ← → : Move
- ↓ : Soft Drop
- ↑ : Hard Drop
- Space: Rotate
- Shift: Hold/Swap
+        const ORIGINAL_PROMPT_VERSION = 'v2.0'; // <<< UPDATED Version Number >>>
+        const ORIGINAL_PROMPT_INSTRUCTIONS = `
+       > Reality Glitching... Grid Reconstruction Required.
 
-<strong>Touch:</strong>
- Bottom-Left Icon: Pause
- Tap Screen: Rotate
- Tap Hold/Next Area: Swap/Ignore
- Slide Finger: Move
- Flick Up/Down: Hard Drop
+       > INTERFACE PROTOCOLS:
 
-(Lock Delay Active - No Infinite Spin)`;
+       <strong>Keyboard / Mouse:</strong>
+       - P: Pause
+       - ← →: Move
+       - ↓: Soft Drop
+       - ↑: Hard Drop
+       - SPACE: Rotate
+       - SHIFT: Hold/Swap
+       - L-Click: Rotate
+       - R-Click: Hold/Swap
+       - Scroll: Rotate
+
+       <strong>Touch:</strong>
+       - Icon: Pause
+       - Slide: Move
+       - Tap: Rotate
+       - Hold Area: Hold/Swap
+       - Flick: Hard Drop
+
+       > OBJECTIVE: Align falling data fragments.
+       > Purge completed lines to stabilize stream.
+       > Monitor the High Score Feed.
+       > Operator efficiency determines final score analysis.
+`; // REMOVED <pre> tags
 
         // Set initial instruction text
         promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS;
@@ -234,7 +289,8 @@
         let score = 0, totalLinesCleared = 0, highScore = 0;
         let gameOver = false; let isPaused = true;
         let matrixStreams = {};
-        let gameOverShimmerInterval = null; // <<< ADDED for shimmer effect
+        let gameOverShimmerInterval = null; // For GAME OVER title shimmer
+        let newHighScoreFanfareInterval = null; // <<< ADDED for fanfare effect
 
         // --- Tetrominoes & Colors ---
         const PIECES = [ [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]], [[0, 1, 1], [1, 1, 0]], [[1, 1, 0], [0, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]] ];
@@ -254,7 +310,15 @@
         let lastDropTime = 0; let lockDelayStartTime = 0; let isLockDelayActive = false; let nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
 
         // --- Matrix Background ---
-        const MATRIX_FIXED_SPAWN_CHANCE = 0.07; const MATRIX_GLOBAL_FADE_FACTOR = 0.15; const MATRIX_BASE_SPEED = 2.5; const MATRIX_SPEED_VARIATION = 8.0; const MATRIX_MIN_FONT_SIZE = 8; const MATRIX_MAX_FONT_SIZE = 18; const MATRIX_COLUMN_WIDTH_MULTIPLIER = 0.9; const MATRIX_TRAIL_MIN_LIGHTNESS = 18; const MATRIX_TRAIL_MAX_LIGHTNESS = 55; const MATRIX_MAIN_COLOR_HUE = 120;
+        const MATRIX_FIXED_SPAWN_CHANCE = 0.015; // Current: 0.015
+        const MATRIX_GLOBAL_FADE_FACTOR = 0.15; 
+        const MATRIX_BASE_SPEED = 1.5; // <<< INCREASED slightly from 1.0
+        const MATRIX_SPEED_VARIATION = 4.0; // <<< INCREASED slightly from 3.0
+        const MATRIX_MIN_FONT_SIZE = 10; // Current: 10
+        const MATRIX_MAX_FONT_SIZE = 20; // Current: 20
+        const MATRIX_COLUMN_WIDTH_MULTIPLIER = 0.9; 
+        const MATRIX_TRAIL_MIN_LIGHTNESS = 18; 
+        const MATRIX_TRAIL_MAX_LIGHTNESS = 55; const MATRIX_MAIN_COLOR_HUE = 120;
         const MATRIX_katakana = 'ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶ'; const MATRIX_latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-*=<>()[]!?@#$&|:.;^~_'; const MATRIX_characterPool = (MATRIX_katakana + MATRIX_latin).split('');
 
         // --- UI Settings ---
@@ -297,6 +361,17 @@
 
         // --- Game State ---
         let nextPiece = null; let heldPiece = null; let canSwap = true; let nextBoxRect = { x: 0, y: 0, width: 0, height: 0 }; let holdBoxRect = { x: 0, y: 0, width: 0, height: 0 };
+        let pieceBag = []; // <<< ADDED: For 7-bag randomizer
+
+        // --- Debug UI State ---
+        let showDebugUI = false;
+        const FPS_SAMPLE_COUNT = 30; // Number of frames to average for FPS display
+        let frameTimes = []; // Stores recent frame durations (in ms)
+        let averageFPS = 0; // Calculated average FPS
+
+        // --- Matrix Rain Constraint State ---
+        let currentRainBoxX = 0;
+        let currentRainBoxWidth = 0;
 
         // --- Visuals ---
         const TITLE_TEXT = "TETRIX"; // Changed from TETЯIX
@@ -352,10 +427,10 @@
         // Modified loadSettings - checks for firebase and attempts to get db
         function loadSettings() {
             // Load other settings from local storage as before
-            settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
+            settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.09); // Default 0.05
             settings_useWireframeBlocks = loadFromLocalStorage('useWireframeBlocks', false);
             settings_sfxEnabled = loadFromLocalStorage('sfxEnabled', true);
-            settings_boardBackgroundAlpha = clamp(loadFromLocalStorage('boardBackgroundAlpha', 0.5), 0.10, 1.0);
+            settings_boardBackgroundAlpha = clamp(loadFromLocalStorage('boardBackgroundAlpha', 0.55), 0.10, 1.0); // <<< UPDATED DEFAULT TO 0.55
             console.log("Non-score settings Loaded:", { settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
 
             // Get Firestore instance (assuming init.js handled initialization)
@@ -399,19 +474,68 @@
         // ===========================================
         function MATRIX_getRandomChar(pool = MATRIX_characterPool) { return pool[Math.floor(Math.random() * pool.length)]; }
         function glitchText(text, intensity = 0.1, charPool = SCORE_GLITCH_CHARS) { if (!text || text.length === 0 || charPool.length === 0) return text; return text.split('').map(char => (Math.random() < intensity && char !== ' ' && char !== ':' && char !== '\n' && char !== '<' && char !== '>') ? charPool[Math.floor(Math.random() * charPool.length)] : char).join(''); }
+        
+        // <<< START: 7-Bag Randomizer Helpers >>>
+        function shuffleArray(array) { // Fisher-Yates (aka Knuth) Shuffle
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+            }
+        }
+        function refillPieceBag() {
+            const pieceIndices = [0, 1, 2, 3, 4, 5, 6]; // Indices corresponding to PIECES array
+            shuffleArray(pieceIndices);
+            pieceBag = pieceIndices;
+            // console.log("Refilled piece bag:", pieceBag); // Old log
+            console.info("[7-BAG] Refilled piece bag:", pieceBag); // <<< ADDED INFO LOG
+        }
+        // <<< END: 7-Bag Randomizer Helpers >>>
+
+        // <<< REWRITTEN: More subtle glitch effect for main prompt >>>
         function updatePromptGlitches() {
              if (!promptElement || promptElement.style.display === 'none') return;
-             if (Math.random() < 0.4) {
+
+             const firstSpan = promptMainText.querySelector('span:first-child');
+             const secondSpan = promptMainText.querySelector('span:last-child');
+             const originalFirstSpanContent = 'TAP : : CLICK';
+             const originalSecondSpanContent = '[ENTER]';
+
+             // Reset second span to ensure it doesn't glitch
+             if (secondSpan && secondSpan.textContent !== originalSecondSpanContent) {
+                 secondSpan.textContent = originalSecondSpanContent;
+             }
+
+             // Only apply new glitch effect to first span ~20% of the time
+             if (firstSpan && Math.random() < 0.2) { 
+                 let newText = '';
+                 for (let i = 0; i < originalFirstSpanContent.length; i++) {
+                     const char = originalFirstSpanContent[i];
+                     // Check if it's an uppercase letter and apply flicker chance
+                     if (char >= 'A' && char <= 'Z' && Math.random() < 0.05) { // 5% chance per letter
+                         newText += Math.floor(Math.random() * 10); // Replace with random digit
+                     } else {
+                         newText += char; // Keep original character
+                     }
+                 }
+                 firstSpan.textContent = newText;
+             } else if (firstSpan && firstSpan.textContent !== originalFirstSpanContent) {
+                  // Ensure it resets fully if no glitch applied this frame
+                 firstSpan.textContent = originalFirstSpanContent; 
+             }
+
+             // Keep version number glitching as before
+             if (Math.random() < 0.4) { 
                  promptVersionText.textContent = glitchText(ORIGINAL_PROMPT_VERSION, 0.1);
              } else {
-                 promptMainText.textContent = ORIGINAL_PROMPT_MAIN;
-                 promptFullscreenText.textContent = ORIGINAL_PROMPT_FS;
                  promptVersionText.textContent = ORIGINAL_PROMPT_VERSION;
              }
+
+             // Keep positional jitter and border color flicker
              const jX = (Math.random() - 0.5) * 3; const jY = (Math.random() - 0.5) * 3; promptElement.style.transform = `translate(-50%, -50%) translate(${jX}px, ${jY}px)`;
              if (Math.random() < 0.3) { const hS = (Math.random() - 0.5) * 20; const lS = (Math.random() - 0.5) * 30; promptElement.style.borderColor = `hsl(${120 + hS}, 100%, ${50 + lS}%)`; } else { promptElement.style.borderColor = 'lime'; }
          }
-        function resetPromptGlitches() { if (!promptElement) return; promptMainText.textContent = ORIGINAL_PROMPT_MAIN; promptFullscreenText.textContent = ORIGINAL_PROMPT_FS; promptVersionText.textContent = ORIGINAL_PROMPT_VERSION; promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS; promptElement.style.transform = 'translate(-50%, -50%)'; promptElement.style.borderColor = 'lime'; }
+        // resetPromptGlitches remains the same, it correctly resets innerHTML
+        function resetPromptGlitches() { if (!promptElement) return; promptMainText.innerHTML = ORIGINAL_PROMPT_MAIN; promptFullscreenText.textContent = ORIGINAL_PROMPT_FS; promptVersionText.textContent = ORIGINAL_PROMPT_VERSION; promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS; promptElement.style.transform = 'translate(-50%, -50%)'; promptElement.style.borderColor = 'lime'; }
         function isPointInRect(x, y, rect) { return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height; }
         function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
         function resumeGame() { if (!isPaused || gameOver) return; isPaused = false; if (gameStartTime > 0) { const d = performance.now() - (lastFrameTime || gameStartTime); lastDropTime += d; if (isLockDelayActive) lockDelayStartTime += d; } SOUNDS.PAUSE_OFF(); }
@@ -468,22 +592,106 @@
         // ===========================================
         // MATRIX BACKGROUND CODE (Stable)
         // ===========================================
-        class MATRIX_Character { constructor(x, y, s, f, v, h = false) { this.x = x; this.y = y; this.speed = s; this.fontSize = f; this.value = v || MATRIX_getRandomChar(); this.isHead = h; this.alpha = h ? 1.0 : (0.3 + Math.random() * 0.5); this.hue = MATRIX_MAIN_COLOR_HUE; this.lightness = h ? 65 : MATRIX_TRAIL_MIN_LIGHTNESS + Math.random() * (MATRIX_TRAIL_MAX_LIGHTNESS - MATRIX_TRAIL_MIN_LIGHTNESS); } update() { this.y += this.speed; if (!this.isHead) this.alpha = Math.max(0.01, this.alpha - 0.01); } draw(ctx) { if (!ctx || this.alpha < 0.05 || isNaN(this.x) || isNaN(this.y)) return; const color = `hsla(${this.hue}, 85%, ${this.lightness}%, ${this.alpha})`; try { ctx.fillStyle = color; ctx.font = `${this.fontSize}px monospace`; ctx.fillText(this.value, this.x, this.y); } catch (e) {} if (!this.isHead && Math.random() < 0.015) this.value = MATRIX_getRandomChar(); } }
+        class MATRIX_Character { 
+            constructor(x, y, s, f, v, h = false) { 
+                this.x = x; this.y = y; this.speed = s; this.fontSize = f; 
+                this.value = v || MATRIX_getRandomChar(); 
+                this.isHead = h; 
+                this.alpha = h ? 1.0 : (0.3 + Math.random() * 0.5); 
+                this.hue = MATRIX_MAIN_COLOR_HUE; 
+                this.lightness = h ? 65 : MATRIX_TRAIL_MIN_LIGHTNESS + Math.random() * (MATRIX_TRAIL_MAX_LIGHTNESS - MATRIX_TRAIL_MIN_LIGHTNESS); 
+            } 
+            update() { 
+                this.y += this.speed; 
+                // if (!this.isHead) this.alpha = Math.max(0.01, this.alpha - 0.01); // Old fade
+                if (!this.isHead) this.alpha = Math.max(0.01, this.alpha - 0.007); // <<< REDUCED fade speed FURTHER (from 0.012) for longer trails
+            } 
+            draw(ctx) { 
+                if (!ctx || this.alpha < 0.05 || isNaN(this.x) || isNaN(this.y)) return; 
+                const color = `hsla(${this.hue}, 85%, ${this.lightness}%, ${this.alpha})`; 
+                try { ctx.fillStyle = color; ctx.font = `${this.fontSize}px monospace`; ctx.fillText(this.value, this.x, this.y); } catch (e) {} if (!this.isHead && Math.random() < 0.015) this.value = MATRIX_getRandomChar(); } }
         class MATRIX_Stream { constructor(x,h){this.x=x;this.h=h;this.chars=[];this.fS=~~(Math.random()*(MATRIX_MAX_FONT_SIZE-MATRIX_MIN_FONT_SIZE+1))+MATRIX_MIN_FONT_SIZE;this.sp=MATRIX_BASE_SPEED+Math.random()*MATRIX_SPEED_VARIATION;let iY=-this.fS*~~(Math.random()*30+15);this.chars.push(new MATRIX_Character(this.x,iY,this.sp,this.fS,null,true));} spawn(){if(!this.chars.length){this.chars.push(new MATRIX_Character(this.x,0,this.sp,this.fS,null,true));return}const hC=this.chars[this.chars.length-1];if(!hC)return;const t=this.fS*(1.0+Math.random()*0.5);if(hC.y>t){try{const nC=new MATRIX_Character(this.x,0,this.sp,this.fS,null,true);hC.isHead=false;this.chars.push(nC);}catch(e){}}} updateDraw(ctx){let a=false;for(let i=this.chars.length-1;i>=0;i--){const c=this.chars[i];if(!c){this.chars.splice(i,1);continue}try{c.update();if(c.y>-this.fS*5&&c.y<this.h+this.fS*5){c.draw(ctx);a=true}if(c.y>this.h+this.fS*30||(c.y>this.h&&c.alpha<0.01)){this.chars.splice(i,1)}else{a=true}}catch(e){this.chars.splice(i,1)}}this.spawn();return this.chars.length===0&&!a;}}
-        function MATRIX_setupStreams() { matrixStreams={};const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;const n=p>0?Math.ceil(width/p):0;for(let i=0;i<n;i++){const k=i.toString();const x=i*p+(Math.random()*p*0.5-p*0.25);if(!isNaN(x)){try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}}}}
-        function MATRIX_drawGlobalRain(ctx) { if(!ctx||!width||!height)return;let d=[];const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;const n=p>0?Math.ceil(width/p):0;for(const k in matrixStreams){if(!Object.prototype.hasOwnProperty.call(matrixStreams,k))continue;const s=matrixStreams[k];if(s){try{if(s.updateDraw(ctx))d.push(k);}catch(e){console.error("Stream err:",e);d.push(k);}}else{d.push(k);}}d.forEach(key=>delete matrixStreams[key]);for(let i=0;i<n;i++){const k=i.toString();if(!matrixStreams[k]&&Math.random()<MATRIX_FIXED_SPAWN_CHANCE){const x=i*p+(Math.random()*p*0.5-p*0.25);if(!isNaN(x)){try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}}}}}
+        
+        function MATRIX_setupStreams() { 
+            matrixStreams={};
+            const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;
+            const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;
+            const n = p > 0 ? Math.ceil(width / p) : 0; // Calculate potential columns across full width
+
+            for(let i=0;i<n;i++){ 
+                const k=i.toString();
+                const x = i * p + (Math.random() * p * 0.5 - p * 0.25); 
+                // <<< ADDED Rain Box Check >>>
+                if (!isNaN(x) && x >= currentRainBoxX && x <= currentRainBoxX + currentRainBoxWidth) { 
+                   try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}
+                }
+            }
+        }
+        
+        function MATRIX_drawGlobalRain(ctx) { 
+            if(!ctx||!width||!height)return;
+            let d=[];
+            const a=(MATRIX_MIN_FONT_SIZE+MATRIX_MAX_FONT_SIZE)/2;
+            const p=a*MATRIX_COLUMN_WIDTH_MULTIPLIER;
+            const n = p > 0 ? Math.ceil(width / p) : 0; // Calculate potential columns across full width
+
+            // Update/draw existing streams (draw all that exist, regardless of box - they might drift out)
+            for(const k in matrixStreams){if(!Object.prototype.hasOwnProperty.call(matrixStreams,k))continue;const s=matrixStreams[k];if(s){try{if(s.updateDraw(ctx))d.push(k);}catch(e){console.error("Stream err:",e);d.push(k);}}else{d.push(k);}}
+            d.forEach(key=>delete matrixStreams[key]);
+            
+            // Add new streams if needed (ONLY within the rain box)
+            for(let i=0;i<n;i++){ 
+                const k=i.toString();
+                if(!matrixStreams[k]&&Math.random()<MATRIX_FIXED_SPAWN_CHANCE){ 
+                     const x = i * p + (Math.random() * p * 0.5 - p * 0.25); 
+                     // <<< ADDED Rain Box Check >>>
+                     if (!isNaN(x) && x >= currentRainBoxX && x <= currentRainBoxX + currentRainBoxWidth) { 
+                        try{matrixStreams[k]=new MATRIX_Stream(x,height);}catch(e){}
+                     }
+                }
+            }
+        }
 
         // ===========================================
         // TETRIS GAME LOGIC (Stable)
         // ===========================================
         function createBoard() { board = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0)); }
-        function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
-        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0;
+        // function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; } // <<< REMOVED OLD RANDOM FUNCTION
+
+        // <<< NEW: 7-Bag Randomizer Piece Generation >>>
+        function getNextPieceFromBag() {
+            if (pieceBag.length === 0) {
+                refillPieceBag();
+            }
+            const pieceIndex = pieceBag.pop(); // Get the last index from the shuffled bag
+            if (pieceIndex === undefined || pieceIndex < 0 || pieceIndex >= PIECES.length) {
+                 console.error("Invalid piece index from bag:", pieceIndex, "Bag:", pieceBag);
+                 // Fallback: refill and try again just in case
+                 refillPieceBag();
+                 const fallbackIndex = pieceBag.pop() || 0; // Default to 0 if pop fails again
+                 console.log("[7-BAG] Drawing piece index (fallback):", fallbackIndex); // <<< ADDED DEBUG LOG
+                 return { shape: PIECES[fallbackIndex], colorIndex: fallbackIndex };
+            }
+            console.log("[7-BAG] Drawing piece index:", pieceIndex); // <<< ADDED DEBUG LOG
+            return { shape: PIECES[pieceIndex], colorIndex: pieceIndex };
+        }
+
+        function spawnPiece() { 
+            // currentPiece = nextPiece || getRandomPiece(); // <<< OLD
+            currentPiece = nextPiece; // <<< UPDATED: Use the prepared nextPiece
+            // nextPiece = getRandomPiece(); // <<< OLD
+            nextPiece = getNextPieceFromBag(); // <<< UPDATED: Get the next piece from the bag
+
+            currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); 
+            currentRow = 0; 
+            canSwap = true; 
+            isLockDelayActive = false; 
+            lockDelayStartTime = 0;
             // <<< DEBUG LOGGING ADDED >>>
             console.log("spawnPiece: Checking validity for:", { shape: currentPiece.shape, currentRow, currentCol });
             if (!isValidMove(currentPiece.shape, currentRow, currentCol)) {
                 // --- DETAILED LOGGING FOR SPAWN FAILURE ---
-                console.log("!!! GAME OVER ON SPAWN !!! - isValidMove returned false."); // Changed from console.error
+                console.info("!!! GAME OVER ON SPAWN !!! - isValidMove returned false."); // <<< CHANGED TO INFO
                 console.log("   Piece Shape:", currentPiece.shape);
                 console.log(`   Spawn Position: row=${currentRow}, col=${currentCol}`);
                 console.log("   Checking board state at spawn location:");
@@ -513,7 +721,32 @@
                 // console.error(`!!! GAME OVER ON SPAWN !!!`, { shape: currentPiece.shape, currentRow, currentCol }); // Replaced by detailed log above
             } else { lastDropTime = performance.now(); } }
         function rotateMatrix(matrix) { const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[x][r-1-y]=1;}}return n; }
+        // <<< NEW: Function to rotate counter-clockwise >>>
+        function rotateMatrixCounterClockwise(matrix) {
+            const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));
+            for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[c-1-x][y]=1;}}
+            return n;
+        }
         function rotatePiece() { if (!currentPiece || isPaused || gameOver) return; const oS = currentPiece.shape; const rS = rotateMatrix(oS); const kicks = [0, -1, 1, -2, 2]; for (const k of kicks) { if (isValidMove(rS, currentRow, currentCol + k)) { const oL = isLockDelayActive; currentPiece.shape = rS; currentCol += k; SOUNDS.ROTATE(); if (oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } return; } } }
+        // <<< NEW: Function to rotate piece counter-clockwise >>>
+        function rotatePieceCounterClockwise() {
+             if (!currentPiece || isPaused || gameOver) return;
+             const oS = currentPiece.shape;
+             const rS = rotateMatrixCounterClockwise(oS);
+             const kicks = [0, -1, 1, -2, 2]; // Use same kicks for now
+             for (const k of kicks) {
+                 if (isValidMove(rS, currentRow, currentCol + k)) {
+                     const oL = isLockDelayActive;
+                     currentPiece.shape = rS;
+                     currentCol += k;
+                     SOUNDS.ROTATE(); // Use same sound for now
+                     if (oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
+                         isLockDelayActive = false;
+                     }
+                     return;
+                 }
+             }
+         }
         function isValidMove(shape, r, c) {
             for(let y=0; y<shape.length; y++) {
                 for(let x=0; x<shape[y].length; x++) {
@@ -524,7 +757,7 @@
                         // console.log('isValidMove check:', { r, c, shapeY: y, shapeX: x, bR, bC, boardVal: (bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OutOfBounds' });
                         if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) {
                             // <<< SIMPLER DEBUG LOGGING ADDED >>>
-                            console.warn(`isValidMove fail check: bR=${bR}, bC=${bC}, boardH=${boardHeight}, boardW=${boardWidth}, boardVal=${(bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OOB'}`);
+                            console.debug(`isValidMove fail check: bR=${bR}, bC=${bC}, boardH=${boardHeight}, boardW=${boardWidth}, boardVal=${(bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OOB'}`); // <<< CHANGED TO DEBUG
                             // <<< END DEBUG LOGGING >>>
                             return false; // Invalid move
                         }
@@ -705,22 +938,140 @@
         // Game Loop (Stable)
         // ===========================================
         let gameStartTime = 0; let lastFrameTime = 0; const MAX_FPS = 60; const MIN_FRAME_TIME = 1000 / MAX_FPS;
-        function gameLoop(timestamp) { requestAnimationFrame(gameLoop); const elapsed = timestamp - lastFrameTime; lastFrameTime = timestamp; const now = performance.now(); if (!isPaused && !gameOver) { if (currentPiece) { if (isLockDelayActive) { if (now - lockDelayStartTime > LOCK_DELAY_DURATION) { lockPiece(); } } else if (now - lastDropTime > dropInterval) { const mR = movePiece(0, 1); if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = now; } else if (mR.moved) { lastDropTime = now; } else { lastDropTime = now; } } } } else if (isPaused && !gameOver && gameStartTime === 0) { updatePromptGlitches(); }
+        function gameLoop(timestamp) { 
+            requestAnimationFrame(gameLoop); 
+            const elapsed = timestamp - lastFrameTime; 
+            lastFrameTime = timestamp; 
+            const now = performance.now();
+
+            // --- FPS Calculation ---
+            if (elapsed > 0) { // Avoid division by zero on first frame
+                frameTimes.push(elapsed);
+                if (frameTimes.length > FPS_SAMPLE_COUNT) {
+                    frameTimes.shift(); // Remove oldest frame time
+                }
+                let totalTime = 0;
+                for (let i = 0; i < frameTimes.length; i++) {
+                    totalTime += frameTimes[i];
+                }
+                const averageFrameTime = totalTime / frameTimes.length;
+                averageFPS = 1000 / averageFrameTime; // Calculate average FPS
+            }
+            // --- End FPS Calculation ---
+
+            if (!isPaused && !gameOver) { 
+                if (currentPiece) { 
+                    if (isLockDelayActive) { 
+                        if (now - lockDelayStartTime > LOCK_DELAY_DURATION) { 
+                            lockPiece(); 
+                        } 
+                    } else if (now - lastDropTime > dropInterval) { 
+                        const mR = movePiece(0, 1); 
+                        if (mR.needsLock) { 
+                            isLockDelayActive = true; 
+                            lockDelayStartTime = now; 
+                        } else if (mR.moved) { 
+                            lastDropTime = now; 
+                        } else { 
+                            lastDropTime = now; 
+                        } 
+                    } 
+                } 
+            } else if (isPaused && !gameOver && gameStartTime === 0) { 
+                updatePromptGlitches(); 
+            }
             ctx.fillStyle = `rgba(0, 0, 0, ${MATRIX_GLOBAL_FADE_FACTOR})`; ctx.fillRect(0, 0, width, height); MATRIX_drawGlobalRain(ctx); drawTitle();
             // Updated game loop: Don't draw game if gameOver
             if (gameOver) {
                 // Game over screen is now an HTML overlay, no drawing needed here
                 if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); }
             }
-            else if (isPaused) { if (gameStartTime === 0) { if (promptElement.style.display === 'none') promptElement.style.display = 'block'; } else { drawGame(timestamp); drawInfoBoxes(timestamp); drawScoreAndLines(); drawPauseMenu(); if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } } }
-            else { drawGame(timestamp); drawInfoBoxes(timestamp); drawScoreAndLines(); drawSettingsIcon(); if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } }
+            else if (isPaused) { 
+                if (gameStartTime === 0) { 
+                    if (promptElement.style.display === 'none') promptElement.style.display = 'block'; 
+                } else { 
+                    drawGame(timestamp); 
+                    drawInfoBoxes(timestamp); 
+                    drawScoreAndLines(); 
+                    drawPauseMenu(); 
+                    if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } 
+                } 
+            }
+            else { 
+                drawGame(timestamp); 
+                drawInfoBoxes(timestamp); 
+                drawScoreAndLines(); 
+                drawSettingsIcon(); 
+                if (promptElement.style.display !== 'none') { promptElement.style.display = 'none'; resetPromptGlitches(); } 
+            }
             if (now < flashEndTime) { ctx.fillStyle = FLASH_COLOR; ctx.fillRect(0, 0, width, height); } if (now < speedUpFlashEndTime) { ctx.fillStyle = SPEED_UP_FLASH_COLOR; ctx.fillRect(0, 0, width, height); } if (now < tetrisFlashEndTime) { ctx.fillStyle = TETRIS_FLASH_COLOR; ctx.fillRect(0, 0, width, height); }
+        
+            drawDebugUI(); // <<< ADDED: Draw debug UI last
+        }
+
+        // <<< ADDED: Function to draw debug info >>>
+        function drawDebugUI() {
+            if (!showDebugUI || !ctx || !width || !height) return;
+
+            const originalAlign = ctx.textAlign;
+            const originalBaseline = ctx.textBaseline;
+            const originalFont = ctx.font;
+            const originalFill = ctx.fillStyle;
+
+            // Set styles for FPS counter
+            const fontSize = 14; // <<< Increased font size
+            ctx.font = `${fontSize}px monospace`;
+            // ctx.fillStyle = 'red'; // Set below after background
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+
+            const fpsText = `FPS: ${averageFPS.toFixed(1)}`;
+            const textMetrics = ctx.measureText(fpsText);
+            const textWidth = textMetrics.width;
+            const textHeight = fontSize; // Approximate height based on font size
+            const padding = 3;
+            const rectX = width - textWidth - 10 - padding;
+            const rectY = 10 - padding;
+            const rectW = textWidth + padding * 2;
+            const rectH = textHeight + padding * 2;
+
+            // Draw semi-transparent background box
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // <<< Added background
+            ctx.fillRect(rectX, rectY, rectW, rectH);
+
+            // Draw FPS text on top
+            ctx.fillStyle = 'red';
+            ctx.fillText(fpsText, width - 10, 10);
+
+            // Restore original context settings
+            ctx.textAlign = originalAlign;
+            ctx.textBaseline = originalBaseline;
+            ctx.font = originalFont;
+            ctx.fillStyle = originalFill;
         }
 
         // ===========================================
         // Setup & Sizing
         // ===========================================
-        function calculateSizes() { const bUISpace = SCORE_LINES_FONT_SIZE + SCORE_LINES_BG_PADDING_Y * 2 + SCORE_LINES_Y_MARGIN + 10; const bBtnSpace = SETTINGS_ICON_SIZE + SETTINGS_ICON_MARGIN + 5; const resBotSpace = Math.max(bUISpace, bBtnSpace); const tMBoard = boardYOffset + 10; const bFH = (height - tMBoard - resBotSpace) / boardHeight; const bFW = width / boardWidth; blockSize = Math.max(5, Math.floor(Math.min(bFH, bFW)) - 1); const tBW = boardWidth * blockSize; const tBH = boardHeight * blockSize; boardXOffset = Math.floor((width - tBW) / 2); const eBY = boardYOffset; const boxS = Math.max(16, Math.floor(blockSize * 3)); const fBW = boxS; const fBH = boxS; nextBoxRect = { x: boardXOffset + INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; holdBoxRect = { x: boardXOffset + tBW - fBW - INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; settingsButtonRect = { x: SETTINGS_ICON_MARGIN, y: height - SETTINGS_ICON_SIZE - SETTINGS_ICON_MARGIN, width: SETTINGS_ICON_SIZE, height: SETTINGS_ICON_SIZE }; pauseMenuCloseButtonRect = { x: width - PAUSE_MENU_CLOSE_BUTTON_SIZE - PAUSE_MENU_CLOSE_BUTTON_MARGIN, y: PAUSE_MENU_CLOSE_BUTTON_MARGIN, width: PAUSE_MENU_CLOSE_BUTTON_SIZE, height: PAUSE_MENU_CLOSE_BUTTON_SIZE }; }
+        function calculateSizes() { const bUISpace = SCORE_LINES_FONT_SIZE + SCORE_LINES_BG_PADDING_Y * 2 + SCORE_LINES_Y_MARGIN + 10; const bBtnSpace = SETTINGS_ICON_SIZE + SETTINGS_ICON_MARGIN + 5; const resBotSpace = Math.max(bUISpace, bBtnSpace); const tMBoard = boardYOffset + 10; const bFH = (height - tMBoard - resBotSpace) / boardHeight; const bFW = width / boardWidth; blockSize = Math.max(5, Math.floor(Math.min(bFH, bFW)) - 1); const tBW = boardWidth * blockSize; const tBH = boardHeight * blockSize; boardXOffset = Math.floor((width - tBW) / 2); const eBY = boardYOffset; const boxS = Math.max(16, Math.floor(blockSize * 3)); const fBW = boxS; const fBH = boxS; nextBoxRect = { x: boardXOffset + INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; holdBoxRect = { x: boardXOffset + tBW - fBW - INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; settingsButtonRect = { x: SETTINGS_ICON_MARGIN, y: height - SETTINGS_ICON_SIZE - SETTINGS_ICON_MARGIN, width: SETTINGS_ICON_SIZE, height: SETTINGS_ICON_SIZE }; pauseMenuCloseButtonRect = { x: width - PAUSE_MENU_CLOSE_BUTTON_SIZE - PAUSE_MENU_CLOSE_BUTTON_MARGIN, y: PAUSE_MENU_CLOSE_BUTTON_MARGIN, width: PAUSE_MENU_CLOSE_BUTTON_SIZE, height: PAUSE_MENU_CLOSE_BUTTON_SIZE };
+
+            // <<< ADDED: Calculate Rain Box Dimensions >>>
+            const rainBoxMargin = 2 * blockSize; // Margin on each side of the board
+            const calculatedBoxWidth = tBW + rainBoxMargin * 2;
+            currentRainBoxWidth = Math.min(width, calculatedBoxWidth); // Don't exceed screen width
+            // Center the box, ensuring it doesn't go off-screen left
+            const calculatedBoxX = boardXOffset - rainBoxMargin;
+            currentRainBoxX = Math.max(0, calculatedBoxX);
+            // Adjust width if starting X was pushed to 0
+            if (currentRainBoxX === 0 && calculatedBoxX < 0) {
+                currentRainBoxWidth = Math.min(width, calculatedBoxWidth + calculatedBoxX); // calculatedBoxX is negative here
+            }
+            // Final check: ensure right edge doesn't exceed screen width
+            if (currentRainBoxX + currentRainBoxWidth > width) {
+                currentRainBoxWidth = width - currentRainBoxX;
+            }
+            // <<< END Rain Box Calculation >>>
+        }
         function setup(isInitialSetup = false) {
             console.log("--- Running Setup ---", "isInitial:", isInitialSetup);
             width = window.innerWidth;
@@ -741,7 +1092,8 @@
             flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0;
             isLockDelayActive = false; lockDelayStartTime = 0;
             currentPiece = null;
-            nextPiece = getRandomPiece();
+            // nextPiece = getRandomPiece(); // <<< OLD
+            nextPiece = getNextPieceFromBag(); // <<< UPDATED: Initial piece from bag
             heldPiece = null;
             canSwap = true;
             if (isInitialSetup) {
@@ -753,9 +1105,9 @@
                 resetPromptGlitches();
                 highScoreDisplayElement.style.display = 'block'; // Show high score initially
                 gameOverOverlay.style.display = 'none'; // Ensure overlay is hidden
-                console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime});
+                console.info("Setup Initial: state set.", {isPaused, gameOver, gameStartTime}); // <<< CHANGED TO INFO
             } else {
-                console.log("Setup Start Game: ...");
+                console.info("Setup Start Game: ..."); // <<< CHANGED TO INFO
                 try {
                     playStartupSequence();
                     isPaused = false;
@@ -778,7 +1130,7 @@
                     resetPromptGlitches();
                     highScoreDisplayElement.style.display = 'block'; // Show high score during game
                     gameOverOverlay.style.display = 'none'; // Ensure overlay is hidden
-                    console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime});
+                    console.info("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime}); // <<< CHANGED TO INFO
                 } catch (error) {
                     console.error("!!!! ERROR DURING setup(false) !!!!", error);
                     isPaused = true; gameOver = true; ctx.fillStyle = 'red'; ctx.font = '20px monospace'; ctx.textAlign = 'center'; ctx.fillText("ERROR DURING STARTUP", width/2, height/2); ctx.textAlign = 'left'; if (promptElement) promptElement.style.display = 'none';
@@ -830,7 +1182,8 @@
                 if (el && el.type === 'slider') {
                     const rX = clamp(x - el.rect.x, 0, el.rect.width); // Relative X within slider bounds
                     const ratio = rX / el.rect.width;
-                    let newValue = el.min + ratio * (el.max - el.min);
+                    // <<< REVERTING TO INVERTED: Calculate value based on position (right = min, left = max) >>>
+                    let newValue = el.max - ratio * (el.max - el.min); // Inverted formula
 
                     // Update the setting based on which slider is active
                     if (el.setting === 'ghostAlpha') {
@@ -868,7 +1221,8 @@
                         // Immediately update value based on initial tap position
                         const rX = clamp(x - el.rect.x, 0, el.rect.width);
                         const ratio = rX / el.rect.width;
-                        let newValue = el.min + ratio * (el.max - el.min);
+                        // <<< REVERTING TO INVERTED: Calculate value based on position >>>
+                        let newValue = el.max - ratio * (el.max - el.min); // Inverted formula
                         if (el.setting === 'ghostAlpha') settings_ghostAlpha = clamp(newValue, el.min, el.max);
                         else if (el.setting === 'boardBackgroundAlpha') settings_boardBackgroundAlpha = clamp(newValue, el.min, el.max);
                         saveSettings();
@@ -1232,6 +1586,12 @@
             if (e.key && e.key.toLowerCase() === 'p') {
                 e.preventDefault(); togglePause(); return;
             }
+            // <<< NEW: Handle Debug UI Toggle >>>
+            if (e.key && e.key.toLowerCase() === 'u') {
+                showDebugUI = !showDebugUI;
+                console.log(`Debug UI ${showDebugUI ? 'Enabled' : 'Disabled'}`);
+                return; // Don't process further if it was the debug key
+            }
 
             // Ignore other keys if paused, game over, or no piece
             if (isPaused || gameOver || !currentPiece) return;
@@ -1303,7 +1663,7 @@
             }
         });
         promptElement.addEventListener('click', handleStartInteraction);
-        setup(true);
+        // setup(true); // <<< MOVED INTO DOMContentLoaded
         // Removed requestAnimationFrame(gameLoop) call from here
         console.log(">>> Matrix Tetris Initialized (Paused - Awaiting Interaction) <<<");
 
@@ -1311,8 +1671,10 @@
         // Moved this listener INSIDE the IIFE
         document.addEventListener('DOMContentLoaded', () => {
             console.log("DOMContentLoaded fired. Running initial setup/game loop.");
-            // setup(true) is already called above, we just need to start the loop
+            // setup(true) is already called above, we just need to start the loop // <<< Comment no longer accurate
             // We might need to re-check Firebase init status here if needed
+
+            setup(true); // <<< MOVED HERE: Run initial setup after DOM is ready
 
             // Add listeners for the new Game Over overlay buttons
             if (submitScoreButton) {
@@ -1332,19 +1694,70 @@
 
         // --- New Game Over & Leaderboard Functions ---
 
+        // <<< MODIFIED: Checks for high score and triggers fanfare if needed >>>
         function showGameOverScreen() {
-            console.log("--- showGameOverScreen called ---"); // <<< ADDED LOG
+            console.log("--- showGameOverScreen called ---");
             isPaused = true; // Ensure pause state
             gameOver = true; // Ensure game over state
 
+            // Check if the final score is a new high score
+            if (score > highScore) {
+                console.log("--- NEW HIGH SCORE DETECTED! Triggering Fanfare --- Score:", score, "Old HighScore:", highScore);
+                // Show Fanfare Overlay
+                const fanfareEl = document.getElementById('new-highscore-fanfare');
+                if (fanfareEl) {
+                    fanfareEl.textContent = `NEW HIGH SCORE!
+${score}`;
+                    fanfareEl.style.display = 'flex';
+                    // Start fanfare effect
+                    if (!newHighScoreFanfareInterval) {
+                        newHighScoreFanfareInterval = setInterval(applyFanfareEffect, 80);
+                    }
+                }
+                // Set timeout to proceed to the normal game over screen after fanfare
+                setTimeout(proceedToGameOverScreen, 3000); // 3 second delay
+            } else {
+                // Not a new high score, proceed directly to game over screen
+                console.log("--- Not a new high score. Proceeding directly. ---")
+                proceedToGameOverScreen();
+            }
+        }
+
+        // <<< NEW: Function to handle fanfare effect >>>
+        function applyFanfareEffect() {
+            const fanfareEl = document.getElementById('new-highscore-fanfare');
+            if (!fanfareEl) return;
+
+            // Example effect: Flash opacity and slight color shift
+            fanfareEl.style.opacity = (Math.random() > 0.3) ? '1' : '0.7';
+            fanfareEl.style.color = (Math.random() > 0.1) ? 'lime' : `hsl(120, 100%, ${85 + Math.random() * 15}%)`;
+            fanfareEl.style.textShadow = `0 0 ${10 + Math.random() * 10}px rgba(0, 255, 0, ${0.6 + Math.random() * 0.4})`;
+        }
+
+        // <<< NEW: Function containing the original game over screen logic >>>
+        function proceedToGameOverScreen() {
+            console.log("--- proceedToGameOverScreen called ---");
+            // Stop and hide Fanfare if it was running
+            const fanfareEl = document.getElementById('new-highscore-fanfare');
+            if (fanfareEl) fanfareEl.style.display = 'none';
+            if (newHighScoreFanfareInterval) {
+                clearInterval(newHighScoreFanfareInterval);
+                newHighScoreFanfareInterval = null;
+            }
+
+            // --- Original logic from showGameOverScreen starts here ---
             // Hide in-game UI elements
             highScoreDisplayElement.style.display = 'none';
-            // (Settings icon is already hidden via drawSettingsIcon logic)
 
             // Populate overlay stats
+            // Note: We need to update highScore here again in case it changed due to fanfare
+            // (Though in current setup, it only loads at start - this is defensive)
+            loadHighScoreFromFirestore().then(() => { // Ensure latest high score before display
+                 gameOverHighscoreEl.textContent = `High Score: ${highScore}`; 
+            });
             gameOverScoreEl.textContent = `Score: ${score}`;
             gameOverLinesEl.textContent = `Lines: ${totalLinesCleared}`;
-            gameOverHighscoreEl.textContent = `High Score: ${highScore}`; // Assumes highScore is up-to-date
+            // gameOverHighscoreEl will be updated by the async call above
 
             // Clear previous status message and enable input/button
             saveStatusMessage.textContent = '';
@@ -1353,27 +1766,27 @@
             submitScoreButton.disabled = false;
             submitScoreButton.textContent = 'Save Score';
 
-            saveScoreSection.style.display = 'flex'; // <<< ADDED: Make save section visible
+            saveScoreSection.style.display = 'flex';
 
             // Load the leaderboard for the overlay
             loadGameOverLeaderboard();
 
-            // Start shimmer effect for title
+            // Start shimmer effect for the *actual* GAME OVER title
             const titleElement = document.getElementById('game-over-title');
-            if (titleElement && !gameOverShimmerInterval) { // Start only if not already running
-                // Ensure letters are wrapped in spans if not already
+            if (titleElement && !gameOverShimmerInterval) {
                 if (!titleElement.querySelector('span')) {
                     titleElement.innerHTML = 'GAME OVER'.split('').map(char => `<span>${char}</span>`).join('');
                 }
-                gameOverShimmerInterval = setInterval(applyGameOverShimmer, 120); // Adjust interval (ms) for speed
+                gameOverShimmerInterval = setInterval(applyGameOverShimmer, 120);
             }
 
-            // Show the overlay
-            console.log("--- Setting gameOverOverlay.style.display = 'flex' ---"); // <<< ADDED LOG
-            gameOverOverlay.style.display = 'flex'; // Use flex for centering
+            // Show the actual game over overlay
+            console.log("--- Setting gameOverOverlay.style.display = 'flex' ---");
+            gameOverOverlay.style.display = 'flex';
+             // --- End Original logic ---
         }
 
-        // <<< ADDED: Function to apply shimmer effect >>>
+        // <<< ADDED: Function to apply shimmer effect (Moved for clarity) >>>
         function applyGameOverShimmer() {
             const titleElement = document.getElementById('game-over-title');
             if (!titleElement) return;
@@ -1399,23 +1812,28 @@
             });
         }
 
-        // <<< MODIFIED: Stop shimmer on restart >>>
+        // <<< MODIFIED: Stop shimmer and fanfare on restart >>>
         function restartGame() {
             console.log("DEBUG: restartGame called.");
 
-             // Stop shimmer effect
+             // Stop GAME OVER title shimmer effect
              if (gameOverShimmerInterval) {
                  clearInterval(gameOverShimmerInterval);
                  gameOverShimmerInterval = null;
-                 // Reset title text to plain (remove spans)
                  const titleElement = document.getElementById('game-over-title');
                  if (titleElement) titleElement.textContent = 'GAME OVER';
              }
+             // Stop and hide Fanfare effect
+             if (newHighScoreFanfareInterval) {
+                 clearInterval(newHighScoreFanfareInterval);
+                 newHighScoreFanfareInterval = null;
+             }
+             const fanfareEl = document.getElementById('new-highscore-fanfare');
+             if (fanfareEl) fanfareEl.style.display = 'none';
 
             gameOverOverlay.style.display = 'none';
             saveScoreSection.style.display = 'none'; // Corrected variable: Hide save score section on restart
-            submitScoreButton.disabled = false; // Corrected variable: Re-enable button
-            submitScoreButton.textContent = 'Save Score'; // Corrected variable: Reset button text
+
             // Clear the board array completely using correct dimensions
             board = Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)); // Corrected: Use boardHeight and boardWidth
             console.log("Board reset in restartGame.");
@@ -1514,7 +1932,7 @@
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                console.log("Score saved successfully by user!");
+                console.info("Score saved successfully by user!"); // <<< CHANGED TO INFO
                 saveStatusMessage.textContent = 'Score Saved!';
                 saveStatusMessage.style.color = '#aaffaa'; // Success green
                 // Button/input remain disabled after successful save for this session
@@ -1560,17 +1978,17 @@
             // Ghost Transparency Slider
             pauseMenuElements['ghostSlider'] = {
                 type: 'slider',
-                label: 'Ghost Transparency', // <<< CHANGED LABEL
+                label: 'Ghost Transparency', // <<< CHANGED LABEL BACK
                 setting: 'ghostAlpha',
                 rect: { x: sliderX, y: currentY, width: sliderWidth, height: PAUSE_MENU_SLIDER_HEIGHT },
-                min: 0.01, max: 0.15
+                min: 0.01, max: 0.09 // <<< UPDATED MAX to 0.09
             };
             currentY += PAUSE_MENU_ITEM_GAP;
 
             // Background Transparency Slider
             pauseMenuElements['bgSlider'] = {
                 type: 'slider',
-                label: 'BG Transparency', // <<< CHANGED LABEL
+                label: 'BG Transparency', // <<< CHANGED LABEL BACK
                 setting: 'boardBackgroundAlpha',
                 rect: { x: sliderX, y: currentY, width: sliderWidth, height: PAUSE_MENU_SLIDER_HEIGHT },
                 min: 0.1, max: 1.0
@@ -1604,7 +2022,7 @@
             // Fullscreen Button
             pauseMenuElements['fullscreenButton'] = {
                 type: 'button',
-                label: () => (document.fullscreenElement || document.webkitFullscreenElement) ? "Exit Fullscreen" : "Enter Fullscreen", // Dynamic label
+                label: () => `Fullscreen: ${(document.fullscreenElement || document.webkitFullscreenElement) ? "ON" : "OFF"}`, // <<< UPDATED LABEL TEXT
                 action: 'toggleFullscreen', // Specific action, not setting
                  rect: { x: buttonX, y: currentY, width: buttonWidthEstimate, height: buttonHeight }
             };
@@ -1708,7 +2126,11 @@
                     let currentVal = 0;
                     if (el.setting === 'ghostAlpha') currentVal = settings_ghostAlpha;
                     else if (el.setting === 'boardBackgroundAlpha') currentVal = settings_boardBackgroundAlpha;
-                    const ratio = clamp((currentVal - el.min) / (el.max - el.min), 0, 1);
+                    // <<< INVERTED: Calculate position ratio based on value (min = right, max = left) >>>
+                    const range = el.max - el.min;
+                    const ratio = (range > 0) ? clamp((el.max - currentVal) / range, 0, 1) : 0; // Handle position based on inverted value
+                    // <<< NEW: Calculate display value (1-10) based on visual position ratio >>>
+                    const displayValue = Math.round(1 + ratio * 9);
                     const handleX = el.rect.x + ratio * el.rect.width;
                     const handleY = el.rect.y + el.rect.height / 2;
                     el.handleX = handleX;
@@ -1725,7 +2147,8 @@
                     ctx.fillStyle = elementColor; // Use themed color
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'top';
-                    ctx.fillText(currentVal.toFixed(2), width / 2, el.rect.y + el.rect.height + 5);
+                    // <<< UPDATED: Draw the 1-10 displayValue instead of the raw alpha >>>
+                    ctx.fillText(displayValue, width / 2, el.rect.y + el.rect.height + 5);
 
                 } else if (el.type === 'button') {
                     // ... (Draw Button Background with themed border) ...
@@ -1851,6 +2274,39 @@
             ctx.textBaseline = 'alphabetic';
         }
         // <<< END REPLACED FUNCTION >>>
+
+        // <<< ADDED: Wheel Listener for Rotation >>>
+        canvas.addEventListener('wheel', (e) => {
+            // Prevent default page scrolling
+            e.preventDefault();
+
+            // Ignore if paused, game over, or no piece
+            if (isPaused || gameOver || !currentPiece) return;
+
+            // Ignore scroll if interacting with pause menu elements (redundant check, but safe)
+            if (activeSlider || activeScrollArea) return;
+
+            initAudio(); // Initialize audio if needed
+
+            if (e.deltaY < 0) { // Scrolling Up
+                rotatePiece(); // Rotate clockwise (standard)
+            } else if (e.deltaY > 0) { // Scrolling Down
+                rotatePieceCounterClockwise(); // Rotate counter-clockwise
+            }
+        }, { passive: false }); // Need passive:false to preventDefault
+
+        window.addEventListener('resize', () => {
+            width = window.innerWidth; 
+            height = window.innerHeight; 
+            canvas.width = width; 
+            canvas.height = height; 
+            calculateSizes(); 
+            MATRIX_setupStreams(); 
+            // Re-initialize pause menu elements on resize if it was already shown
+            if (pauseMenuInitialized) {
+                 initializePauseMenuElements();
+            }
+        });
 
     })(); // End of IIFE
 
