@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetrix Clone</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #222; }
+        canvas { border: 1px solid #fff; }
+        #score { position: absolute; top: 10px; left: 10px; color: white; font-size: 24px; font-family: 'Arial', sans-serif; }
+        #level { position: absolute; top: 40px; left: 10px; color: white; font-size: 24px; font-family: 'Arial', sans-serif; }
+        #highScore { position: absolute; top: 70px; left: 10px; color: white; font-size: 24px; font-family: 'Arial', sans-serif; }
+        #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: yellow; font-size: 36px; font-family: 'Arial', sans-serif; text-align: center; display: none; background-color: rgba(0, 0, 0, 0.7); padding: 20px; border-radius: 10px; }
+    </style>
+
+    <!-- Firebase SDK -->
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/10.12.4/firebase-app-compat.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="/__/firebase/10.12.4/firebase-auth-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-database-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-firestore-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-functions-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-messaging-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-storage-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-analytics-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-remote-config-compat.js"></script>
+    <script defer src="/__/firebase/10.12.4/firebase-performance-compat.js"></script>
+    <!--
+      initialize the SDK after all desired features are loaded, set useEmulator to false
+      to avoid connecting the SDK to running emulators.
+    -->
+    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+
+
+</head>
+<body>
+    <canvas id="gameCanvas" width="300" height="600"></canvas>
+    <div id="score">Score: 0</div>
+    <div id="level">Level: 1</div>
+    <div id="highScore">High Score: 0</div>
+    <div id="message"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', (event) => {
+          try {
+            let app = firebase.app();
+            let features = ['auth', 'database', 'firestore', 'functions', 'messaging', 'storage', 'analytics', 'remoteConfig', 'performance'].filter(feature => typeof app[feature] === 'function');
+            // You can optionally log the enabled features:
+            // document.getElementById('load').innerHTML = `Firebase SDK loaded with ${features.join(', ')}`;
+            console.log(`Firebase SDK loaded with ${features.join(', ')}`);
+
+            // Initialize Firestore and check high score
+            const db = firebase.firestore();
+            loadHighScore(db); // Load high score when DOM is ready
+
+          } catch (e) {
+            console.error(e);
+            // document.getElementById('load').innerHTML = 'Error loading the Firebase SDK, check the console.';
+             console.error('Error loading the Firebase SDK, check the console.');
+          }
+
+
+            const canvas = document.getElementById('gameCanvas');
+            const context = canvas.getContext('2d');
+            const scoreElement = document.getElementById('score');
+            const levelElement = document.getElementById('level');
+            const highScoreElement = document.getElementById('highScore');
+            const messageElement = document.getElementById('message');
+
+            const GRID_WIDTH = 10;
+            const GRID_HEIGHT = 20;
+            const BLOCK_SIZE = 30; // Size of each block in pixels
+
+            canvas.width = GRID_WIDTH * BLOCK_SIZE;
+            canvas.height = GRID_HEIGHT * BLOCK_SIZE;
+
+            let score = 0;
+            let level = 1;
+            let highScore = 0; // Initialize high score
+            let grid = createGrid(GRID_WIDTH, GRID_HEIGHT);
+            let currentPiece;
+            let nextPiece;
+            let dropCounter = 0;
+            let dropInterval = 1000; // Milliseconds per drop
+            let lastTime = 0;
+            let isPaused = false;
+            let isGameOver = false;
+
+            const colors = [
+                null,
+                '#FF0D72', // T
+                '#0DC2FF', // I
+                '#0DFF72', // O
+                '#F538FF', // L
+                '#FF8E0D', // J
+                '#FFE138', // S
+                '#3877FF'  // Z
+            ];
+
+            const shapes = [
+                [], // Empty shape for index 0
+                [[0, 1, 0], [1, 1, 1], [0, 0, 0]], // T
+                [[0, 0, 0, 0], [2, 2, 2, 2], [0, 0, 0, 0], [0, 0, 0, 0]], // I
+                [[3, 3], [3, 3]], // O
+                [[0, 4, 0], [0, 4, 0], [0, 4, 4]], // L
+                [[0, 5, 0], [0, 5, 0], [5, 5, 0]], // J
+                [[0, 6, 6], [6, 6, 0], [0, 0, 0]], // S
+                [[7, 7, 0], [0, 7, 7], [0, 0, 0]]  // Z
+            ];
+
+            // --- Firestore High Score ---
+             async function loadHighScore(db) {
+                const docRef = db.collection("scores").doc("highScore");
+                try {
+                    const doc = await docRef.get();
+                    if (doc.exists) {
+                        highScore = doc.data().score;
+                        highScoreElement.textContent = `High Score: ${highScore}`;
+                        console.log("High score loaded:", highScore);
+                    } else {
+                        console.log("No high score document found, starting fresh.");
+                        highScore = 0;
+                        highScoreElement.textContent = `High Score: 0`;
+                    }
+                } catch (error) {
+                    console.error("Error getting high score: ", error);
+                     // Display error to user or handle gracefully
+                    highScore = 0; // Default to 0 on error
+                    highScoreElement.textContent = `High Score: 0`;
+                }
+            }
+
+            async function saveHighScore(db, newScore) {
+                if (newScore > highScore) {
+                    highScore = newScore;
+                    highScoreElement.textContent = `High Score: ${highScore}`;
+                    const docRef = db.collection("scores").doc("highScore");
+                    try {
+                        await docRef.set({ score: highScore });
+                        console.log("New high score saved:", highScore);
+                    } catch (error) {
+                        console.error("Error saving high score: ", error);
+                        // Optionally inform the user about the failure
+                    }
+                }
+            }
+
+
+            function createGrid(width, height) {
+                const grid = [];
+                while (height--) {
+                    grid.push(new Array(width).fill(0));
+                }
+                return grid;
+            }
+
+             function getRandomPiece() {
+                const randomIndex = Math.floor(Math.random() * (shapes.length - 1)) + 1; // Avoid index 0
+                const shape = shapes[randomIndex];
+                return {
+                    pos: { x: Math.floor(GRID_WIDTH / 2) - Math.floor(shape[0].length / 2), y: 0 },
+                    shape: shape,
+                    colorIndex: randomIndex
+                };
+            }
+
+            function isValidMove(piece, grid, offsetX = 0, offsetY = 0, newShape = null) {
+                const shape = newShape || piece.shape;
+                for (let y = 0; y < shape.length; ++y) {
+                    for (let x = 0; x < shape[y].length; ++x) {
+                        if (shape[y][x] !== 0) {
+                            const newX = piece.pos.x + x + offsetX;
+                            const newY = piece.pos.y + y + offsetY;
+
+                            // Check boundaries
+                            if (newX < 0 || newX >= GRID_WIDTH || newY >= GRID_HEIGHT) {
+                                return false;
+                            }
+                            // Check collision with existing blocks on the grid (only if newY >= 0)
+                            if (newY >= 0 && grid[newY][newX] !== 0) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+
+
+            function mergePiece(piece, grid) {
+                piece.shape.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            // Ensure we don't try to write outside the grid bounds, especially during game over
+                            if (piece.pos.y + y >= 0 && piece.pos.y + y < GRID_HEIGHT &&
+                                piece.pos.x + x >= 0 && piece.pos.x + x < GRID_WIDTH) {
+                                grid[piece.pos.y + y][piece.pos.x + x] = piece.colorIndex;
+                            }
+                        }
+                    });
+                });
+            }
+
+
+            function rotate(matrix) {
+                const N = matrix.length;
+                const result = matrix.map((row, i) =>
+                    row.map((val, j) => matrix[N - 1 - j][i])
+                );
+                return result;
+            }
+
+            function pieceRotate() {
+                const originalPos = currentPiece.pos.x;
+                let offset = 1;
+                const rotatedShape = rotate(currentPiece.shape);
+
+                if (!isValidMove(currentPiece, grid, 0, 0, rotatedShape)) {
+                    // Try wall kicks
+                    if (!isValidMove(currentPiece, grid, offset, 0, rotatedShape)) {
+                        offset = -(offset + (offset > 0 ? 1 : -1)); // Try other direction
+                         if (!isValidMove(currentPiece, grid, offset, 0, rotatedShape)) {
+                            return; // Rotation failed even with kicks
+                        }
+                    }
+                    currentPiece.pos.x += offset; // Apply kick offset if valid
+                 }
+
+                 // Check if still valid after potential kick
+                 if (isValidMove(currentPiece, grid, 0, 0, rotatedShape)) {
+                    currentPiece.shape = rotatedShape;
+                 } else {
+                     currentPiece.pos.x = originalPos; // Revert position if kick failed
+                 }
+            }
+
+             function pieceDrop() {
+                if (isPaused || isGameOver) return;
+                if (isValidMove(currentPiece, grid, 0, 1)) {
+                    currentPiece.pos.y++;
+                    dropCounter = 0; // Reset counter after manual drop
+                } else {
+                    // Piece landed
+                    mergePiece(currentPiece, grid);
+                    sweepLines();
+                    spawnNewPiece();
+                    // Check for game over immediately after spawning
+                    if (!isValidMove(currentPiece, grid)) {
+                       gameOver();
+                    }
+                }
+            }
+
+            function pieceMove(direction) {
+                 if (isPaused || isGameOver) return;
+                if (isValidMove(currentPiece, grid, direction, 0)) {
+                    currentPiece.pos.x += direction;
+                }
+            }
+
+             function hardDrop() {
+                 if (isPaused || isGameOver) return;
+                while (isValidMove(currentPiece, grid, 0, 1)) {
+                    currentPiece.pos.y++;
+                }
+                pieceDrop(); // Finalize the drop (merge, sweep, spawn)
+            }
+
+
+            function sweepLines() {
+                let linesCleared = 0;
+                outer: for (let y = GRID_HEIGHT - 1; y >= 0; --y) {
+                    for (let x = 0; x < GRID_WIDTH; ++x) {
+                        if (grid[y][x] === 0) {
+                            continue outer; // Go to next row if any cell is empty
+                        }
+                    }
+
+                    // Line is full
+                    const row = grid.splice(y, 1)[0].fill(0); // Remove the full row
+                    grid.unshift(row); // Add an empty row at the top
+                    linesCleared++;
+                    y++; // Re-check the current row index as it's now a new row
+                }
+
+                if (linesCleared > 0) {
+                    // Update score based on lines cleared and level
+                    let points = 0;
+                    switch (linesCleared) {
+                        case 1: points = 40 * level; break;
+                        case 2: points = 100 * level; break;
+                        case 3: points = 300 * level; break;
+                        case 4: points = 1200 * level; break; // Tetris!
+                    }
+                    score += points;
+                    updateScore();
+
+                    // Update level based on total lines cleared (example: level up every 10 lines)
+                    // Note: This needs a counter for total lines cleared if you want this logic.
+                    // For simplicity, let's increase level based on score for now.
+                    const newLevel = Math.floor(score / 500) + 1; // Level up every 500 points
+                    if (newLevel > level) {
+                        level = newLevel;
+                        updateLevel();
+                        // Increase speed
+                        dropInterval = Math.max(100, 1000 - (level - 1) * 50); // Decrease interval, min 100ms
+                    }
+                }
+            }
+
+            function spawnNewPiece() {
+                 currentPiece = nextPiece || getRandomPiece(); // Use nextPiece if available
+                 nextPiece = getRandomPiece(); // Generate the piece for the next turn
+                 // TODO: Display next piece visually (needs a separate small canvas)
+            }
+
+
+            function updateScore() {
+                scoreElement.textContent = `Score: ${score}`;
+                if (firebase.firestore) { // Check if Firestore is initialized
+                     saveHighScore(firebase.firestore(), score); // Save potentially new high score
+                } else {
+                    console.warn("Firestore not available to save high score.");
+                }
+            }
+
+
+             function updateLevel() {
+                levelElement.textContent = `Level: ${level}`;
+            }
+
+            function drawBlock(x, y, colorIndex) {
+                context.fillStyle = colors[colorIndex];
+                context.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                context.strokeStyle = '#555'; // Darker border for definition
+                context.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+            }
+
+
+             function drawGrid() {
+                // Draw the existing settled blocks
+                grid.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            drawBlock(x, y, value);
+                        } else {
+                            // Optionally draw empty grid cells for visual structure
+                            // context.fillStyle = '#333'; // Dark grey for empty cells
+                            // context.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                        }
+                    });
+                });
+
+                 // Draw the current falling piece
+                if (currentPiece) {
+                    currentPiece.shape.forEach((row, y) => {
+                        row.forEach((value, x) => {
+                            if (value !== 0) {
+                                drawBlock(currentPiece.pos.x + x, currentPiece.pos.y + y, currentPiece.colorIndex);
+                            }
+                        });
+                    });
+                }
+            }
+
+             function draw() {
+                // Clear canvas
+                context.fillStyle = '#000'; // Black background
+                context.fillRect(0, 0, canvas.width, canvas.height);
+
+                drawGrid();
+
+                 // Draw grid lines (optional)
+                 context.strokeStyle = '#444';
+                 for (let x = 0; x <= GRID_WIDTH; x++) {
+                     context.beginPath();
+                     context.moveTo(x * BLOCK_SIZE, 0);
+                     context.lineTo(x * BLOCK_SIZE, canvas.height);
+                     context.stroke();
+                 }
+                 for (let y = 0; y <= GRID_HEIGHT; y++) {
+                     context.beginPath();
+                     context.moveTo(0, y * BLOCK_SIZE);
+                     context.lineTo(canvas.width, y * BLOCK_SIZE);
+                     context.stroke();
+                 }
+            }
+
+            function update(time = 0) {
+                 if (isPaused || isGameOver) {
+                     if (isGameOver) {
+                        showMessage("Game Over! Press 'R' to Restart");
+                     } else if (isPaused) {
+                         showMessage("Paused. Press 'P' to Resume");
+                     }
+                    requestAnimationFrame(update); // Keep animation loop running for messages
+                    return;
+                 }
+
+                 hideMessage(); // Hide any previous messages
+
+                const deltaTime = time - lastTime;
+                lastTime = time;
+
+                dropCounter += deltaTime;
+                if (dropCounter > dropInterval) {
+                    pieceDrop(); // Automatic drop based on interval
+                }
+
+                draw();
+                requestAnimationFrame(update);
+            }
+
+             function showMessage(text) {
+                messageElement.textContent = text;
+                messageElement.style.display = 'block';
+            }
+
+            function hideMessage() {
+                messageElement.style.display = 'none';
+            }
+
+            function togglePause() {
+                isPaused = !isPaused;
+                if (isPaused) {
+                    // Optional: Stop music or other effects
+                } else {
+                     // Resume music/effects if applicable
+                     // Need to restart the game loop if it was completely stopped
+                     // or just let the existing loop continue if it handles the pause flag.
+                     // If using requestAnimationFrame, it naturally handles resuming.
+                    hideMessage(); // Hide pause message
+                }
+            }
+
+             function gameOver() {
+                 isGameOver = true;
+                 console.log("Game Over!");
+                 // Final score check for high score
+                 if (firebase.firestore) {
+                    saveHighScore(firebase.firestore(), score);
+                 }
+                 // Optional: Stop music, show final score prominently etc.
+            }
+
+            function resetGame() {
+                grid = createGrid(GRID_WIDTH, GRID_HEIGHT);
+                score = 0;
+                level = 1;
+                dropInterval = 1000;
+                isGameOver = false;
+                isPaused = false; // Ensure not paused
+                spawnNewPiece(); // Get first piece
+                updateScore();
+                updateLevel();
+                hideMessage();
+                // Need to restart the game loop if it was stopped completely
+                // If using requestAnimationFrame, just ensure the isGameOver flag is false.
+                // The update loop will then continue.
+                // If Firebase was initialized, load the high score again on reset.
+                if (firebase.firestore) {
+                     loadHighScore(firebase.firestore());
+                 } else {
+                     highScore = 0; // Reset local high score if no DB
+                     highScoreElement.textContent = `High Score: ${highScore}`;
+                 }
+            }
+
+
+            // Keyboard Controls
+            document.addEventListener('keydown', event => {
+                if (isGameOver) {
+                    if (event.key === 'r' || event.key === 'R') {
+                        resetGame();
+                        // Restart the animation frame loop explicitly if it was stopped.
+                        // If `update` always calls `requestAnimationFrame`, it should restart automatically.
+                        // If `update` was paused, ensure it's called again.
+                        // requestAnimationFrame(update); // Might be needed depending on how gameOver stops the loop
+                    }
+                    return; // Ignore other keys if game over
+                }
+
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'a': // WASD controls
+                        pieceMove(-1);
+                        break;
+                    case 'ArrowRight':
+                    case 'd':
+                        pieceMove(1);
+                        break;
+                    case 'ArrowDown':
+                    case 's':
+                        pieceDrop(); // Move down one step
+                        break;
+                    case 'ArrowUp':
+                    case 'w': // Typically used for rotate
+                        pieceRotate();
+                        break;
+                    case ' ': // Space bar for hard drop
+                        hardDrop();
+                        event.preventDefault(); // Prevent page scrolling
+                        break;
+                    case 'p': // Pause game
+                    case 'P':
+                        togglePause();
+                        break;
+                     case 'r': // Reset game
+                    case 'R':
+                        if (!isGameOver) { // Allow reset anytime (optional)
+                           resetGame();
+                           // requestAnimationFrame(update); // May be needed if pause stops the loop
+                        }
+                        break;
+                }
+            });
+
+             // Initial setup
+            resetGame(); // Start the game for the first time
+            update(); // Start the game loop
+
+        }); // End DOMContentLoaded
+    </script>
+</body>
+</html>
