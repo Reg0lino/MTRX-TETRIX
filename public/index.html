@@ -281,7 +281,29 @@
         function playTone(frequency = 440, duration = 50, type = 'square', volume = 0.08) {
             if (!settings_sfxEnabled) return;
             volume *= 0.9; if (!audioCtx || audioCtx.state === 'suspended') { initAudio(); if (!audioCtx || audioCtx.state !== 'running') { return; } } if (audioCtx.state !== 'running') { return; } try { const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.setValueAtTime(frequency, audioCtx.currentTime); g.gain.setValueAtTime(volume, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000); o.connect(g); g.connect(audioCtx.destination); o.start(audioCtx.currentTime); o.stop(audioCtx.currentTime + duration / 1000); } catch (e) { console.error("Error playing tone:", e); } }
-        const SOUNDS = { ROTATE: () => playTone(300, 30, 'triangle', 0.06), MOVE: () => playTone(150, 20, 'sine', 0.04), LAND: () => playTone(100, 40, 'square', 0.08), LINE_CLEAR: () => playTone(600, 100, 'sawtooth', 0.1), HARD_DROP: () => playTone(80, 60, 'square', 0.1), GAME_OVER: () => { playTone(200, 300, 'sawtooth', 0.15); setTimeout(() => playTone(150, 400, 'sawtooth', 0.15), 150); }, HOLD_SWAP: () => playTone(450, 70, 'sine', 0.07), SOFT_DROP: () => playTone(90, 15, 'square', 0.03), TETRIS_CLEAR: () => { const b = 500, i = 60, d = 80, v = 0.12; playTone(b, d, 'triangle', v); setTimeout(() => playTone(b * 1.25, d, 'triangle', v), i * 1); setTimeout(() => playTone(b * 1.5, d, 'triangle', v), i * 2); setTimeout(() => playTone(b * 2, d * 1.5, 'triangle', v), i * 3); }, UI_CLICK: () => playTone(500, 25, 'sine', 0.05), PAUSE_ON: () => playTone(350, 50, 'sine', 0.07), PAUSE_OFF: () => playTone(550, 50, 'sine', 0.07), };
+        const SOUNDS = { 
+            ROTATE: () => playTone(300, 30, 'triangle', 0.06), 
+            MOVE: () => playTone(150, 20, 'sine', 0.04), 
+            LAND: () => playTone(100, 40, 'square', 0.08), 
+            LINE_CLEAR: () => playTone(600, 100, 'sawtooth', 0.1), 
+            HARD_DROP: () => playTone(80, 60, 'square', 0.1), 
+            GAME_OVER: () => { playTone(200, 300, 'sawtooth', 0.15); setTimeout(() => playTone(150, 400, 'sawtooth', 0.15), 150); }, 
+            HOLD_SWAP: () => playTone(450, 70, 'sine', 0.07), 
+            SOFT_DROP: () => playTone(90, 15, 'square', 0.03), 
+            TETRIS_CLEAR: () => { const b = 500, i = 60, d = 80, v = 0.12; playTone(b, d, 'triangle', v); setTimeout(() => playTone(b * 1.25, d, 'triangle', v), i * 1); setTimeout(() => playTone(b * 1.5, d, 'triangle', v), i * 2); setTimeout(() => playTone(b * 2, d * 1.5, 'triangle', v), i * 3); }, 
+            UI_CLICK: () => playTone(500, 25, 'sine', 0.05), 
+            PAUSE_ON: () => playTone(350, 50, 'sine', 0.07), 
+            PAUSE_OFF: () => playTone(550, 50, 'sine', 0.07),
+            // <<< ADDED: Speed Up Fanfare >>>
+            SPEED_UP: () => { 
+                const freq1 = 440, freq2 = 554, freq3 = 659;
+                // const dur = 60, gap = 70, vol = 0.09; // Original values
+                const dur = 80, gap = 90, vol = 0.12; // <<< Louder and longer values
+                playTone(freq1, dur, 'triangle', vol);
+                setTimeout(() => playTone(freq2, dur, 'triangle', vol), gap);
+                setTimeout(() => playTone(freq3, dur * 1.2, 'triangle', vol), gap * 2);
+            },
+        };
         function playStartupSequence() { const b = 300, r = 600, d = 40, v = 0.05, dl = 45; for (let i = 0; i < 10; i++) { setTimeout(() => { const f = b + Math.random() * r; playTone(f, d, 'sine', v); }, i * dl); } }
 
         // --- Game Config ---
@@ -861,7 +883,26 @@
             }
             spawnPiece(); // Spawn next piece only if game didn't end
         }
-        function clearLines() { let cl = 0; let rTC = []; for (let r = boardHeight - 1; r >= 0; r--) { if (board[r].every(c => c !== 0)) { cl++; rTC.push(r); } } rTC.sort((a, b) => a - b); for (let i = rTC.length - 1; i >= 0; i--) { board.splice(rTC[i], 1); } for (let i = 0; i < cl; i++) { board.unshift(Array(boardWidth).fill(0)); } if (cl > 0) { score += cl * 100 * cl; totalLinesCleared += cl; if (cl === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; } else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; } while (totalLinesCleared >= nextSpeedUpMilestone) { dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER); nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE; console.log(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`); speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION; } } return cl; }
+        function clearLines() { let cl = 0; let rTC = []; for (let r = boardHeight - 1; r >= 0; r--) { if (board[r].every(c => c !== 0)) { cl++; rTC.push(r); } } rTC.sort((a, b) => a - b); for (let i = rTC.length - 1; i >= 0; i--) { board.splice(rTC[i], 1); } for (let i = 0; i < cl; i++) { board.unshift(Array(boardWidth).fill(0)); } if (cl > 0) { 
+                score += cl * 100 * cl; 
+                totalLinesCleared += cl; 
+                if (cl === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; } 
+                else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; } 
+                
+                // Speed up logic
+                let spedUpThisClear = false; // Flag to play sound only once per clear
+                while (totalLinesCleared >= nextSpeedUpMilestone) { 
+                    dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER); 
+                    nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE; 
+                    console.info(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`); 
+                    speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION; 
+                    if (!spedUpThisClear) {
+                       SOUNDS.SPEED_UP(); // <<< Play speed up sound
+                       spedUpThisClear = true;
+                    }
+                } 
+            } 
+            return cl; }
         function calculateGhostPosition() { if(!currentPiece||gameOver)return currentRow;let gR=currentRow;while(isValidMove(currentPiece.shape,gR+1,currentCol))gR++;return gR;}
         function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; SOUNDS.GAME_OVER(); console.log("GAME OVER (Swap)"); currentPiece = null; showGameOverScreen(); // <<< Call new function
         } } canSwap = false; }
@@ -1302,7 +1343,19 @@
         // Event Listeners (Stable)
         // ===========================================
         canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+            // <<< MODIFIED: Conditional preventDefault >>>
+            const targetElement = e.target;
+            const isGameOverVisible = gameOver; // Check game state
+            const isPlayerInput = targetElement && targetElement.id === 'player-name';
+            const isSubmitButton = targetElement && targetElement.id === 'submit-score-button';
+            const isRestartButton = targetElement && targetElement.id === 'restart-button';
+
+            // Only prevent default if NOT interacting with essential Game Over UI elements
+            if (!(isGameOverVisible && (isPlayerInput || isSubmitButton || isRestartButton))) {
+                e.preventDefault(); 
+            }
+            // <<< END MODIFICATION >>>
+            
             initAudio();
             if (gameOver) {
                 // If game over, any touch should restart (consistent with old version's mousedown/enter)
