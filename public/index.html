@@ -24,6 +24,26 @@
         }
         .instructions-text strong { color: #afFaFf; display: block; margin-bottom: 3px; /* Space after titles */ } /* Style for control type labels */
     </style>
+
+    <!-- Firebase SDK -->
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/10.12.4/firebase-app-compat.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-auth-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-database-compat.js"></script> -->
+    <script defer src="/__/firebase/10.12.4/firebase-firestore-compat.js"></script>
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-functions-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-messaging-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-storage-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-analytics-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-remote-config-compat.js"></script> -->
+    <!-- <script defer src="/__/firebase/10.12.4/firebase-performance-compat.js"></script> -->
+    <!--
+      initialize the SDK after all desired features are loaded, set useEmulator to false
+      to avoid connecting the SDK to running emulators.
+    -->
+    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
@@ -35,6 +55,7 @@
              <!-- Content set by JS with newlines -->
         </span>
     </div>
+    <div id="highScoreDisplay" style="position: absolute; top: 10px; right: 10px; color: white; font-size: 18px; font-family: 'Consolas', monospace; background-color: rgba(0,0,0,0.5); padding: 5px;">High Score: 0</div>
 
     <script>
     (function() { // IIFE
@@ -47,8 +68,12 @@
         const promptFullscreenText = document.getElementById('prompt-fullscreen-text');
         const promptVersionText = document.getElementById('prompt-version');
         const promptInstructionsText = document.getElementById('prompt-instructions');
+        const highScoreDisplayElement = document.getElementById('highScoreDisplay'); // Added High Score Element
         const ctx = canvas.getContext('2d');
-        if (!canvas || !promptElement || !ctx || !promptMainText || !promptFullscreenText || !promptVersionText || !promptInstructionsText) { alert("CRITICAL ERROR: Elements missing."); return; }
+        if (!canvas || !promptElement || !ctx || !promptMainText || !promptFullscreenText || !promptVersionText || !promptInstructionsText || !highScoreDisplayElement) { // Added check for highScoreDisplayElement
+            alert("CRITICAL ERROR: Elements missing.");
+            return;
+        }
         console.log(">>> Matrix Tetris STARTING <<<");
 
         const ORIGINAL_PROMPT_MAIN = promptMainText.textContent;
@@ -146,28 +171,99 @@
         // --- Visuals ---
         const TITLE_TEXT = "TETЯIX"; const TITLE_FONT_SIZE_RATIO = 0.1; const TITLE_ALPHA = 0.15; const TITLE_COLOR = 'hsl(120, 40%, 30%)';
 
+        // --- Firestore Database --- (Added)
+        let db = null;
+
+        // --- Firestore High Score Functions --- (Added)
+        async function loadHighScoreFromFirestore() {
+            if (!db) {
+                console.warn("Firestore not initialized, cannot load high score.");
+                highScore = 0; // Default to 0 if DB not ready
+                highScoreDisplayElement.textContent = `High Score: ${highScore}`;
+                return;
+            }
+            const docRef = db.collection("scores").doc("highScore");
+            try {
+                const doc = await docRef.get();
+                if (doc.exists) {
+                    highScore = doc.data().score;
+                    highScoreDisplayElement.textContent = `High Score: ${highScore}`;
+                    console.log("Firestore high score loaded:", highScore);
+                } else {
+                    console.log("No high score document in Firestore, starting fresh.");
+                    highScore = 0;
+                    highScoreDisplayElement.textContent = `High Score: 0`;
+                    // Optionally create the document if it doesn't exist
+                    await docRef.set({ score: 0 });
+                    console.log("Created initial high score document in Firestore.");
+                }
+            } catch (error) {
+                console.error("Error getting high score from Firestore: ", error);
+                highScore = 0; // Default to 0 on error
+                highScoreDisplayElement.textContent = `High Score: 0`;
+            }
+        }
+
+        async function saveHighScoreToFirestore() {
+            if (!db) {
+                console.warn("Firestore not initialized, cannot save high score.");
+                return;
+            }
+            if (score > highScore) {
+                highScore = score; // Update local high score variable
+                highScoreDisplayElement.textContent = `High Score: ${highScore}`; // Update display
+                const docRef = db.collection("scores").doc("highScore");
+                try {
+                    await docRef.set({ score: highScore });
+                    console.log("New high score saved to Firestore:", highScore);
+                } catch (error) {
+                    console.error("Error saving high score to Firestore: ", error);
+                    // Optionally inform the user about the failure
+                }
+            }
+        }
+
         // ===========================================
-        // LOCAL STORAGE FUNCTIONS
+        // LOCAL STORAGE FUNCTIONS (REMOVED - Replaced by Firestore)
         // ===========================================
-        const LS_PREFIX = 'matrixTetris_';
-        function saveToLocalStorage(key, value) { try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); } catch (e) { console.error("LocalStorage Save Error:", e); } }
-        function loadFromLocalStorage(key, defaultValue) { try { const storedValue = localStorage.getItem(LS_PREFIX + key); return storedValue !== null ? JSON.parse(storedValue) : defaultValue; } catch (e) { console.error("LocalStorage Load Error:", e); return defaultValue; } }
+        // const LS_PREFIX = 'matrixTetris_';
+        // function saveToLocalStorage(key, value) { /* ... removed ... */ }
+        // function loadFromLocalStorage(key, defaultValue) { /* ... removed ... */ }
+
+        // Modified loadSettings to init Firebase and load Firestore score
         function loadSettings() {
-            highScore = loadFromLocalStorage('highScore', 0);
+            // Load other settings from local storage as before
             settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
             settings_useWireframeBlocks = loadFromLocalStorage('useWireframeBlocks', false);
             settings_sfxEnabled = loadFromLocalStorage('sfxEnabled', true);
             settings_boardBackgroundAlpha = clamp(loadFromLocalStorage('boardBackgroundAlpha', 0.5), 0.10, 1.0);
-            console.log("Settings Loaded:", { highScore, settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
+            console.log("Non-score settings Loaded:", { settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
+
+            // Initialize Firebase and load high score
+            try {
+                firebase.initializeApp(firebaseConfig); // Assumes firebaseConfig is available via init.js
+                db = firebase.firestore();
+                console.log("Firebase Initialized, Firestore instance obtained.");
+                loadHighScoreFromFirestore(); // Load score after initialization
+            } catch (e) {
+                console.error("Firebase initialization failed: ", e);
+                // Handle error, maybe display a message to the user
+                highScoreDisplayElement.textContent = "High Score: Error";
+            }
         }
+
+        // Save non-score settings (score saved separately via Firestore function)
         function saveSettings() {
-             saveToLocalStorage('highScore', highScore);
+             // saveToLocalStorage('highScore', highScore); // REMOVED
              saveToLocalStorage('ghostAlpha', settings_ghostAlpha);
              saveToLocalStorage('useWireframeBlocks', settings_useWireframeBlocks);
              saveToLocalStorage('sfxEnabled', settings_sfxEnabled);
              saveToLocalStorage('boardBackgroundAlpha', settings_boardBackgroundAlpha);
         }
-        function saveHighScore() { if (score > highScore) { highScore = score; saveToLocalStorage('highScore', highScore); console.log(`--- NEW HIGH SCORE: ${highScore} ---`); } }
+
+        // Replaced saveHighScore with Firestore version (defined above)
+        // function saveHighScore() { /* ... removed local storage version ... */ }
+
 
         // ===========================================
         // HELPER FUNCTIONS
@@ -234,17 +330,17 @@
         // ===========================================
         function createBoard() { board = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0)); }
         function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
-        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.error(`!!! GAME OVER ON SPAWN !!!`); } else { lastDropTime = performance.now(); } }
+        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.error(`!!! GAME OVER ON SPAWN !!!`); } else { lastDropTime = performance.now(); } }
         function rotateMatrix(matrix) { const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[x][r-1-y]=1;}}return n; }
         function rotatePiece() { if (!currentPiece || isPaused || gameOver) return; const oS = currentPiece.shape; const rS = rotateMatrix(oS); const kicks = [0, -1, 1, -2, 2]; for (const k of kicks) { if (isValidMove(rS, currentRow, currentCol + k)) { const oL = isLockDelayActive; currentPiece.shape = rS; currentCol += k; SOUNDS.ROTATE(); if (oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } return; } } }
         function isValidMove(shape, r, c) { for(let y=0; y<shape.length; y++) { for(let x=0; x<shape[y].length; x++) { if(shape[y][x]) { let bR = r + y; let bC = c + x; if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) return false; } } } return true; }
         function movePiece(dX, dY) { if (!currentPiece || isPaused || gameOver) return { moved: false, needsLock: false }; if (dY > 0 && isLockDelayActive) return { moved: false, needsLock: true }; if (isValidMove(currentPiece.shape, currentRow + dY, currentCol + dX)) { const oL = isLockDelayActive; currentCol += dX; currentRow += dY; if (dY > 0) { isLockDelayActive = false; } else if (dX !== 0 && oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } const nL = dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol); return { moved: true, needsLock: nL }; } if (dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { return { moved: false, needsLock: true }; } } return { moved: false, needsLock: false }; }
         function hardDrop() { if (!currentPiece || isPaused || gameOver) return; if (isLockDelayActive) { lockPiece(); return; } const gR = calculateGhostPosition(); if (gR > currentRow) { SOUNDS.HARD_DROP(); currentRow = gR; if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } } else { lockPiece(); } } else { if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } else { lockPiece(); } } else { lockPiece(); } } }
         function softDrop() { if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; const mR = movePiece(0, 1); if (mR.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; } else if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false; }
-        function lockPiece() { if(!currentPiece || isPaused || gameOver) return; isLockDelayActive = false; lockDelayStartTime = 0; let pL = false; for(let y=0; y<currentPiece.shape.length; y++) { for(let x=0; x<currentPiece.shape[y].length; x++) { if(currentPiece.shape[y][x]) { let bR = currentRow + y; let bC = currentCol + x; if (bC >= 0 && bC < boardWidth && bR < boardHeight) { if (bR < 0) { gameOver = true; break; } else { board[bR][bC] = currentPiece.colorIndex + 1; pL = true; } } } } if(gameOver) break; } if (gameOver) { isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (lockPiece)"); currentPiece = null; return; } if (pL) { SOUNDS.LAND(); clearLines(); } else { console.warn("lockPiece called but no blocks landed?"); } spawnPiece(); }
+        function lockPiece() { if(!currentPiece || isPaused || gameOver) return; isLockDelayActive = false; lockDelayStartTime = 0; let pL = false; for(let y=0; y<currentPiece.shape.length; y++) { for(let x=0; x<currentPiece.shape[y].length; x++) { if(currentPiece.shape[y][x]) { let bR = currentRow + y; let bC = currentCol + x; if (bC >= 0 && bC < boardWidth && bR < boardHeight) { if (bR < 0) { gameOver = true; break; } else { board[bR][bC] = currentPiece.colorIndex + 1; pL = true; } } } } if(gameOver) break; } if (gameOver) { isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (lockPiece)"); currentPiece = null; return; } if (pL) { SOUNDS.LAND(); clearLines(); } else { console.warn("lockPiece called but no blocks landed?"); } spawnPiece(); }
         function clearLines() { let cl = 0; let rTC = []; for (let r = boardHeight - 1; r >= 0; r--) { if (board[r].every(c => c !== 0)) { cl++; rTC.push(r); } } rTC.sort((a, b) => a - b); for (let i = rTC.length - 1; i >= 0; i--) { board.splice(rTC[i], 1); } for (let i = 0; i < cl; i++) { board.unshift(Array(boardWidth).fill(0)); } if (cl > 0) { score += cl * 100 * cl; totalLinesCleared += cl; if (cl === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; } else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; } while (totalLinesCleared >= nextSpeedUpMilestone) { dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER); nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE; console.log(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`); speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION; } } return cl; }
         function calculateGhostPosition() { if(!currentPiece||gameOver)return currentRow;let gR=currentRow;while(isValidMove(currentPiece.shape,gR+1,currentCol))gR++;return gR;}
-        function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (Swap)"); currentPiece = null; } } canSwap = false; }
+        function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (Swap)"); currentPiece = null; } } canSwap = false; }
 
         // ===========================================
         // DRAWING FUNCTIONS
@@ -375,7 +471,67 @@
         // Setup & Sizing
         // ===========================================
         function calculateSizes() { const bUISpace = SCORE_LINES_FONT_SIZE + SCORE_LINES_BG_PADDING_Y * 2 + SCORE_LINES_Y_MARGIN + 10; const bBtnSpace = SETTINGS_ICON_SIZE + SETTINGS_ICON_MARGIN + 5; const resBotSpace = Math.max(bUISpace, bBtnSpace); const tMBoard = boardYOffset + 10; const bFH = (height - tMBoard - resBotSpace) / boardHeight; const bFW = width / boardWidth; blockSize = Math.max(5, Math.floor(Math.min(bFH, bFW)) - 1); const tBW = boardWidth * blockSize; const tBH = boardHeight * blockSize; boardXOffset = Math.floor((width - tBW) / 2); const eBY = boardYOffset; const boxS = Math.max(16, Math.floor(blockSize * 3)); const fBW = boxS; const fBH = boxS; nextBoxRect = { x: boardXOffset + INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; holdBoxRect = { x: boardXOffset + tBW - fBW - INFO_BOX_MARGIN, y: eBY + INFO_BOX_MARGIN, width: fBW, height: fBH }; settingsButtonRect = { x: SETTINGS_ICON_MARGIN, y: height - SETTINGS_ICON_SIZE - SETTINGS_ICON_MARGIN, width: SETTINGS_ICON_SIZE, height: SETTINGS_ICON_SIZE }; pauseMenuCloseButtonRect = { x: width - PAUSE_MENU_CLOSE_BUTTON_SIZE - PAUSE_MENU_CLOSE_BUTTON_MARGIN, y: PAUSE_MENU_CLOSE_BUTTON_MARGIN, width: PAUSE_MENU_CLOSE_BUTTON_SIZE, height: PAUSE_MENU_CLOSE_BUTTON_SIZE }; }
-        function setup(isInitialSetup = false) { console.log("--- Running Setup ---", "isInitial:", isInitialSetup); width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; if (isInitialSetup) { loadSettings(); } calculateSizes(); MATRIX_setupStreams(); createBoard(); score = 0; totalLinesCleared = 0; gameOver = false; dropInterval = initialDropInterval; nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE; flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0; isLockDelayActive = false; lockDelayStartTime = 0; currentPiece = null; nextPiece = getRandomPiece(); heldPiece = null; canSwap = true; if (isInitialSetup) { isPaused = true; gameStartTime = 0; lastFrameTime = 0; promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS; promptElement.style.display = 'block'; resetPromptGlitches(); console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime}); } else { console.log("Setup Start Game: ..."); try { playStartupSequence(); isPaused = false; spawnPiece(); if (!gameOver) { gameStartTime = performance.now(); lastDropTime = gameStartTime; lastFrameTime = gameStartTime; } else { isPaused = true; } promptElement.style.display = 'none'; resetPromptGlitches(); console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime}); } catch (error) { console.error("!!!! ERROR DURING setup(false) !!!!", error); isPaused = true; gameOver = true; ctx.fillStyle = 'red'; ctx.font = '20px monospace'; ctx.textAlign = 'center'; ctx.fillText("ERROR DURING STARTUP", width/2, height/2); ctx.textAlign = 'left'; if (promptElement) promptElement.style.display = 'none'; } } console.log(`--- Setup Complete W:${width} H:${height} ---`); }
+        function setup(isInitialSetup = false) {
+            console.log("--- Running Setup ---", "isInitial:", isInitialSetup);
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            if (isInitialSetup) {
+                loadSettings(); // This now initializes Firebase and attempts to load high score
+            }
+            calculateSizes();
+            MATRIX_setupStreams();
+            createBoard();
+            score = 0;
+            totalLinesCleared = 0;
+            gameOver = false;
+            dropInterval = initialDropInterval;
+            nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
+            flashEndTime = 0; speedUpFlashEndTime = 0; tetrisFlashEndTime = 0;
+            isLockDelayActive = false; lockDelayStartTime = 0;
+            currentPiece = null;
+            nextPiece = getRandomPiece();
+            heldPiece = null;
+            canSwap = true;
+            if (isInitialSetup) {
+                isPaused = true;
+                gameStartTime = 0;
+                lastFrameTime = 0;
+                promptInstructionsText.innerHTML = ORIGINAL_PROMPT_INSTRUCTIONS;
+                promptElement.style.display = 'block';
+                resetPromptGlitches();
+                console.log("Setup Initial: state set.", {isPaused, gameOver, gameStartTime});
+            } else {
+                console.log("Setup Start Game: ...");
+                try {
+                    playStartupSequence();
+                    isPaused = false;
+                    spawnPiece();
+                    if (!gameOver) {
+                        gameStartTime = performance.now();
+                        lastDropTime = gameStartTime;
+                        lastFrameTime = gameStartTime;
+                        // Ensure high score is loaded if Firebase init was delayed
+                        if (!db) {
+                            loadSettings(); // Attempt re-init/load if needed
+                        } else {
+                            // If DB already exists, ensure score is loaded (might be redundant but safe)
+                            loadHighScoreFromFirestore();
+                        }
+                    } else {
+                        isPaused = true;
+                    }
+                    promptElement.style.display = 'none';
+                    resetPromptGlitches();
+                    console.log("Setup Start Game: state set.", {isPaused, gameOver, gameStartTime});
+                } catch (error) {
+                    console.error("!!!! ERROR DURING setup(false) !!!!", error);
+                    isPaused = true; gameOver = true; ctx.fillStyle = 'red'; ctx.font = '20px monospace'; ctx.textAlign = 'center'; ctx.fillText("ERROR DURING STARTUP", width/2, height/2); ctx.textAlign = 'left'; if (promptElement) promptElement.style.display = 'none';
+                }
+            }
+            console.log(`--- Setup Complete W:${width} H:${height} ---`);
+        }
 
         // ===========================================
         // Fullscreen & Start
