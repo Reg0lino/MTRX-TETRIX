@@ -537,15 +537,37 @@
         function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
         function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0;
             // <<< DEBUG LOGGING ADDED >>>
-            console.log('spawnPiece: Checking validity for:', { shape: currentPiece.shape, currentRow, currentCol });
+            console.log("spawnPiece: Checking validity for:", { shape: currentPiece.shape, currentRow, currentCol });
             if (!isValidMove(currentPiece.shape, currentRow, currentCol)) {
+                // --- DETAILED LOGGING FOR SPAWN FAILURE ---
+                console.error("!!! GAME OVER ON SPAWN !!! - isValidMove returned false.");
+                console.log("   Piece Shape:", currentPiece.shape);
+                console.log(`   Spawn Position: row=${currentRow}, col=${currentCol}`);
+                console.log("   Checking board state at spawn location:");
+                for (let y = 0; y < currentPiece.shape.length; y++) {
+                    let rowStr = `      Shape Row ${y}: `;
+                    for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                        if (currentPiece.shape[y][x]) {
+                            let bR = currentRow + y;
+                            let bC = currentCol + x;
+                            let boardValue = 'OOB'; // Out Of Bounds
+                            if (bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) {
+                                boardValue = board[bR][bC];
+                            }
+                            rowStr += `[x=${x} -> bR=${bR},bC=${bC}, val=${boardValue}] `;
+                        }
+                    }
+                    console.log(rowStr);
+                }
+                // --- END DETAILED LOGGING ---
+
                 gameOver = true; isPaused = true;
                 saveHighScoreToFirestore(); // Keep this call
                 SOUNDS.GAME_OVER();
                 // Show save score button
                 showGameOverScreen(); // <<< Call new function
                 // <<< DEBUG LOGGING ADDED >>>
-                console.error(`!!! GAME OVER ON SPAWN !!!`, { shape: currentPiece.shape, currentRow, currentCol });
+                // console.error(`!!! GAME OVER ON SPAWN !!!`, { shape: currentPiece.shape, currentRow, currentCol }); // Replaced by detailed log above
             } else { lastDropTime = performance.now(); } }
         function rotateMatrix(matrix) { const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[x][r-1-y]=1;}}return n; }
         function rotatePiece() { if (!currentPiece || isPaused || gameOver) return; const oS = currentPiece.shape; const rS = rotateMatrix(oS); const kicks = [0, -1, 1, -2, 2]; for (const k of kicks) { if (isValidMove(rS, currentRow, currentCol + k)) { const oL = isLockDelayActive; currentPiece.shape = rS; currentCol += k; SOUNDS.ROTATE(); if (oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } return; } } }
