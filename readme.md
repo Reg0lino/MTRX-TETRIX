@@ -1,26 +1,70 @@
-# Protocol :: CODE_RECONSTRUCTION_SIM v1.1
+```text
+████████╗ ███████ ████████╗ ███████╗ ██╗ ██╗  ██╗
+╚══██╔══╝ ██╔════╝╚══██╔══╝ ██╔══██╗ ██║ ╚██╗██╔╝
+   ██║    █████╗     ██║    ██████╔╝ ██║  ╚███╔╝ 
+   ██║    ██╔══╝     ██║    ██╔══██╗ ██║  ██╔██╗ 
+   ██║    ███████╗   ██║    ██║  ██╗ ██║ ██╔╝ ██╗
+   ╚═╝    ╚══════╝   ╚═╝    ╚═╝  ╚═╝ ╚═╝ ╚═╝  ╚═╝
+```
 
-## Anomaly Source: Unstable Code Stream
+## [ ➡️ ENTER THE GRID // ENGAGE SIMULATION ⬅️ ](https://tetrix-d29b0.web.app/)
 
-**Intercepted Data:**
+**(Link leads to the live game interface)**
 
-Main data stream fragmented. Cascading code constructs detected. Operator input required for reconstruction sequence. Simulation protocols active.
+---
 
-**Directive:**
+```diff
++ Protocol :: CODE_RECONSTRUCTION_SIM v1.37
+```
 
-Achieve maximum horizontal data line integrity within the active grid. Integrate descending code blocks to purge corruption. Prevent construct accumulation exceeding grid apex threshold.
+> **Anomaly Source:** Unstable Code Stream Detected... Grid Integrity Compromised...
 
-**Interface Inputs:**
+### Intercepted Data Fragments:
 
-*   `←` / `↑`: Rotate Construct (Anti/Clockwise)
-*   `→`: Shift Horizontal (+)
-*   `↓`: Accelerate Descent
-*   `P`: Suspend Simulation Field
+*   Main data stream fragmented.
+*   Cascading code constructs detected.
+*   Operator input required for reconstruction sequence.
+*   Simulation protocols active.
 
-**Evaluation:**
+---
 
-Success measured by completed data lines. Failure results in irreversible stream corruption.
+```diff
++ Directive :: Reconstruct & Purge
+```
 
-**Engage Simulation:** [Link to your GitHub Pages URL will appear here once deployed]
+*   **Objective:** Achieve maximum horizontal data line integrity within the active grid.
+*   **Method:** Integrate descending code blocks to purge corruption.
+*   **Constraint:** Prevent construct accumulation exceeding grid apex threshold. Failure results in irreversible stream corruption.
 
---- Corruption Stabilized... Temporarily ---
+---
+
+### Grid Interface Inputs:
+
+#### Keyboard:
+*   `P`   : Suspend Simulation Field
+*   `←`/`→` : Shift Construct
+*   `↓`   : Soft Drop Construct
+*   `↑`   : Hard Drop Construct
+*   `SPACE`: Rotate Construct
+*   `SHIFT`: Hold/Swap Construct
+
+#### Touch:
+*   Bottom-Left Icon : Pause
+*   Slide Finger     : Move
+*   Tap Screen       : Rotate
+*   Tap Hold/Next Area: Hold/Swap
+*   Flick Up/Down    : Hard Drop
+
+_(Lock Delay Active - Exploits Neutralized)_
+
+---
+
+### Evaluation Matrix:
+
+*   **Success:** Measured by completed data lines purged.
+*   **Failure:** Irreversible stream corruption. System Collapse.
+
+---
+
+> `> System State: Corruption Stabilized... Temporarily...`
+> `> Awaiting Operator Input...`
