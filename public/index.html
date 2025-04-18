@@ -1006,12 +1006,12 @@
         }
 
         function restartGame() {
-            console.log("Restarting game...");
-            createBoard(); // Ensure board is explicitly reset first
+            console.log("DEBUG: restartGame called."); // <<< Added Log
+            createBoard(); // <<< ADDED: Ensure board is explicitly reset FIRST
             gameOverOverlay.style.display = 'none'; // Hide the overlay
             // setup(false) handles resetting game state, showing game UI, etc.
             initAudio(); // Re-initialize audio context if needed
-            setup(false);
+            setup(false); // Start a new game
         }
 
     })(); // End of IIFE
