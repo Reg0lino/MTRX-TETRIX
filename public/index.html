@@ -333,10 +333,43 @@
         // ===========================================
         function createBoard() { board = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0)); }
         function getRandomPiece() { const i = Math.floor(Math.random() * PIECES.length); return { shape: PIECES[i], colorIndex: i }; }
-        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.error(`!!! GAME OVER ON SPAWN !!!`); } else { lastDropTime = performance.now(); } }
+        function spawnPiece() { currentPiece = nextPiece || getRandomPiece(); nextPiece = getRandomPiece(); currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; canSwap = true; isLockDelayActive = false; lockDelayStartTime = 0;
+            // <<< DEBUG LOGGING ADDED >>>
+            console.log('spawnPiece: Checking validity for:', { shape: currentPiece.shape, currentRow, currentCol });
+            if (!isValidMove(currentPiece.shape, currentRow, currentCol)) {
+                gameOver = true; isPaused = true;
+                saveHighScoreToFirestore(); // Keep this call
+                SOUNDS.GAME_OVER();
+                // <<< DEBUG LOGGING ADDED >>>
+                console.error(`!!! GAME OVER ON SPAWN !!!`, { shape: currentPiece.shape, currentRow, currentCol });
+            } else { lastDropTime = performance.now(); } }
         function rotateMatrix(matrix) { const r=matrix.length,c=matrix[0].length;const n=Array.from({length:c},()=>Array(r).fill(0));for(let y=0;y<r;y++){for(let x=0;x<c;x++){if(matrix[y][x])n[x][r-1-y]=1;}}return n; }
         function rotatePiece() { if (!currentPiece || isPaused || gameOver) return; const oS = currentPiece.shape; const rS = rotateMatrix(oS); const kicks = [0, -1, 1, -2, 2]; for (const k of kicks) { if (isValidMove(rS, currentRow, currentCol + k)) { const oL = isLockDelayActive; currentPiece.shape = rS; currentCol += k; SOUNDS.ROTATE(); if (oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } return; } } }
-        function isValidMove(shape, r, c) { for(let y=0; y<shape.length; y++) { for(let x=0; x<shape[y].length; x++) { if(shape[y][x]) { let bR = r + y; let bC = c + x; if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) return false; } } } return true; }
+        function isValidMove(shape, r, c) {
+            for(let y=0; y<shape.length; y++) {
+                for(let x=0; x<shape[y].length; x++) {
+                    if(shape[y][x]) {
+                        let bR = r + y;
+                        let bC = c + x;
+                        // <<< DEBUG LOGGING ADDED >>>
+                        // console.log('isValidMove check:', { r, c, shapeY: y, shapeX: x, bR, bC, boardVal: (bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OutOfBounds' });
+                        if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) {
+                            // <<< DEBUG LOGGING ADDED >>>
+                            console.warn('isValidMove FAILED:', {
+                                r, c, shapeY: y, shapeX: x, bR, bC,
+                                reason: bR < 0 ? 'Too high' :
+                                        bR >= boardHeight ? 'Too low' :
+                                        bC < 0 ? 'Too left' :
+                                        bC >= boardWidth ? 'Too right' :
+                                        (bR >= 0 && board[bR][bC] !== 0) ? `Collision with board[${bR}][${bC}] = ${board[bR][bC]}` : 'Unknown'
+                            });
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
         function movePiece(dX, dY) { if (!currentPiece || isPaused || gameOver) return { moved: false, needsLock: false }; if (dY > 0 && isLockDelayActive) return { moved: false, needsLock: true }; if (isValidMove(currentPiece.shape, currentRow + dY, currentCol + dX)) { const oL = isLockDelayActive; currentCol += dX; currentRow += dY; if (dY > 0) { isLockDelayActive = false; } else if (dX !== 0 && oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } const nL = dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol); return { moved: true, needsLock: nL }; } if (dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { return { moved: false, needsLock: true }; } } return { moved: false, needsLock: false }; }
         function hardDrop() { if (!currentPiece || isPaused || gameOver) return; if (isLockDelayActive) { lockPiece(); return; } const gR = calculateGhostPosition(); if (gR > currentRow) { SOUNDS.HARD_DROP(); currentRow = gR; if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } } else { lockPiece(); } } else { if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } else { lockPiece(); } } else { lockPiece(); } } }
         function softDrop() { if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; const mR = movePiece(0, 1); if (mR.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; } else if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false; }
@@ -612,23 +645,20 @@
         window.addEventListener('resize', () => { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; calculateSizes(); MATRIX_setupStreams(); });
         promptElement.addEventListener('click', handleStartInteraction);
         setup(true);
-        requestAnimationFrame(gameLoop);
+        // Removed requestAnimationFrame(gameLoop) call from here
         console.log(">>> Matrix Tetris Initialized (Paused - Awaiting Interaction) <<<");
 
-    })(); // End of IIFE
+        // Wait for DOMContentLoaded to ensure Firebase scripts have loaded/run
+        // Moved this listener INSIDE the IIFE
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOMContentLoaded fired. Running initial setup/game loop.");
+            // setup(true) is already called above, we just need to start the loop
+            // We might need to re-check Firebase init status here if needed
+            // Let's try starting the loop directly now
+            requestAnimationFrame(gameLoop);
+        });
 
-    // Wait for DOMContentLoaded to ensure Firebase scripts have loaded/run
-    document.addEventListener('DOMContentLoaded', () => {
-        // Access functions/variables defined inside the IIFE if needed,
-        // otherwise, call setup directly if it's global or refactor.
-        // Assuming setup is globally accessible or IIFE exposes it:
-        if (typeof setup === 'function') {
-             setup(true);
-             requestAnimationFrame(gameLoop); // Start game loop after initial setup
-        } else {
-            console.error("Setup function not found after DOMContentLoaded!");
-        }
-    });
+    })(); // End of IIFE
 
     </script>
     <!-- Removed conflict markers from end of file -->
