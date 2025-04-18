@@ -230,24 +230,28 @@
             }
         }
 
-        // Modified loadSettings to init Firebase and load Firestore score
+        // Modified loadSettings to get Firestore instance after auto-init
         function loadSettings() {
-            // Load other settings from local storage as before (This should work now)
+            // Load other settings from local storage as before
             settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
             settings_useWireframeBlocks = loadFromLocalStorage('useWireframeBlocks', false);
             settings_sfxEnabled = loadFromLocalStorage('sfxEnabled', true);
             settings_boardBackgroundAlpha = clamp(loadFromLocalStorage('boardBackgroundAlpha', 0.5), 0.10, 1.0);
             console.log("Non-score settings Loaded:", { settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
 
-            // Initialize Firebase and load high score
+            // Get Firestore instance (assuming init.js handled initialization)
             try {
-                firebase.initializeApp(firebaseConfig); // Assumes firebaseConfig is available via init.js
-                db = firebase.firestore();
-                console.log("Firebase Initialized, Firestore instance obtained.");
-                loadHighScoreFromFirestore(); // Load score after initialization
+                if (typeof firebase !== 'undefined' && typeof firebase.firestore === 'function') {
+                    db = firebase.firestore();
+                    console.log("Firestore instance obtained from initialized Firebase app.");
+                    loadHighScoreFromFirestore(); // Load score after getting instance
+                } else {
+                    console.warn("Firebase or Firestore not ready when loadSettings called.");
+                     // We might try again later or rely on setup(false) to load score
+                    highScoreDisplayElement.textContent = "High Score: Loading...";
+                }
             } catch (e) {
-                console.error("Firebase initialization failed: ", e);
-                // Handle error, maybe display a message to the user
+                console.error("Error accessing Firestore: ", e);
                 highScoreDisplayElement.textContent = "High Score: Error";
             }
         }
@@ -559,7 +563,8 @@
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) return; const cX = touch.clientX; const cY = touch.clientY; if (isPaused && activeSlider) { handlePauseMenuInteraction(cX, cY, false); return; } if (isPaused || gameOver || !currentPiece) return; const tDX = cX - touchStartX; const tDY = cY - touchStartY; const iDX = cX - lastHorizontalMoveX; const iDY = cY - lastSoftDropY; const hD = Math.abs(tDX) > Math.abs(tDY) * 1.2 && Math.abs(tDX) > TAP_MOVEMENT_THRESHOLD / 2; const vD = Math.abs(tDY) > Math.abs(tDX) * 1.2 && tDY > SOFT_DROP_START_THRESHOLD; if (!isDraggingDown && (isDraggingHorizontally || hD)) { if (!isDraggingHorizontally) isDraggingHorizontally = true; horizontalMoveAccumulator += iDX; const eBS = Math.max(10, blockSize); const rPD = eBS * HORIZONTAL_MOVE_PIXEL_THRESHOLD; while (Math.abs(horizontalMoveAccumulator) >= rPD) { const dir = horizontalMoveAccumulator > 0 ? 1 : -1; if (movePiece(dir, 0).moved) { SOUNDS.MOVE(); horizontalMoveAccumulator -= dir * rPD; } else { horizontalMoveAccumulator = 0; break; } } lastHorizontalMoveX = cX; } else if (!isDraggingHorizontally && (isDraggingDown || vD)) { if (!isDraggingDown) isDraggingDown = true; if (!isLockDelayActive) { let pDSLD = iDY; let bTD = Math.floor(pDSLD * SOFT_DROP_MOVE_PER_PIXEL); if (bTD > 0) { let sD = 0; for (let i = 0; i < bTD; i++) { if (softDrop()) sD++; else break; } if (sD > 0) lastSoftDropY = Math.min(lastSoftDropY + sD / SOFT_DROP_MOVE_PER_PIXEL, cY); } } lastSoftDropY = cY; } else { lastHorizontalMoveX = cX; lastSoftDropY = cY; } }, { passive: false });
         canvas.addEventListener('touchend', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) { const gT = e.changedTouches[0]; if (isPaused && gameStartTime > 0 && gT) { handlePauseMenuInteraction(gT.clientX, gT.clientY, true); } return; } touchIdentifier = null; const tEX = touch.clientX; const tEY = touch.clientY; if (activeSlider) { activeSlider = null; return; } if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(tEX, tEY, true)) { return; } } if (isPaused || gameOver) return; const wDD = isDraggingDown; const wDH = isDraggingHorizontally; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; const eT = performance.now() - touchStartTime; const dX = tEX - touchStartX; const dY = tEY - touchStartY; let aT = false; if (!wDD && !wDH && eT < TAP_TIME_LIMIT && Math.abs(dX) < TAP_MOVEMENT_THRESHOLD && Math.abs(dY) < TAP_MOVEMENT_THRESHOLD) { let tH = (holdBoxRect.width > 0 && isPointInRect(tEX, tEY, holdBoxRect)); let tN = (nextBoxRect.width > 0 && isPointInRect(tEX, tEY, nextBoxRect)); if (tH) { swapPiece(); aT = true; } else if (tN) { aT = false; } else { rotatePiece(); aT = true; } } if (!aT && !wDD && !wDH && eT < SWIPE_TIME_LIMIT) { if (Math.abs(dY) > SWIPE_THRESHOLD && Math.abs(dY) > Math.abs(dX) * 1.2) { hardDrop(); aT = true; } } if ((wDD || wDH) && !aT && currentPiece) { if (!isLockDelayActive && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } aT = true; } }, { passive: false });
         canvas.addEventListener('touchcancel', (e) => { const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (touch) { touchIdentifier = null; activeSlider = null; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; console.log("Tracked touch cancelled"); } }, { passive: false });
-        canvas.addEventListener('keydown', (e) => {
+        // Changed listener from canvas to window
+        window.addEventListener('keydown', (e) => {
             if ((isPaused && gameStartTime === 0 && promptElement.style.display !== 'none') || gameOver) {
                 if (e.key === 'Enter') {
                     e.preventDefault(); handleStartInteraction(); return;
@@ -611,6 +616,20 @@
         console.log(">>> Matrix Tetris Initialized (Paused - Awaiting Interaction) <<<");
 
     })(); // End of IIFE
+
+    // Wait for DOMContentLoaded to ensure Firebase scripts have loaded/run
+    document.addEventListener('DOMContentLoaded', () => {
+        // Access functions/variables defined inside the IIFE if needed,
+        // otherwise, call setup directly if it's global or refactor.
+        // Assuming setup is globally accessible or IIFE exposes it:
+        if (typeof setup === 'function') {
+             setup(true);
+             requestAnimationFrame(gameLoop); // Start game loop after initial setup
+        } else {
+            console.error("Setup function not found after DOMContentLoaded!");
+        }
+    });
+
     </script>
     <!-- Removed conflict markers from end of file -->
 </body>
