@@ -306,8 +306,13 @@
         const BLOCK_BASE_ALPHA = 0.42; const BLOCK_SHIMMER_SPEED = 0.003; const BLOCK_SHIMMER_AMOUNT = 0.1; const BLOCK_FLICKER_CHANCE = 0.0005; const BLOCK_FLICKER_COLOR = 'rgba(255, 255, 255, 0.9)';
 
         // --- Game Speed & Timing ---
-        const initialDropInterval = 450; let dropInterval = initialDropInterval; const minDropInterval = 100; const LINES_PER_SPEED_INCREASE = 10; const SPEED_UP_MULTIPLIER = 0.90; const LOCK_DELAY_DURATION = 500;
-        let lastDropTime = 0; let lockDelayStartTime = 0; let isLockDelayActive = false; let nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
+        const initialDropInterval = 450; let dropInterval = initialDropInterval; 
+        const minDropInterval = 100; 
+        const LINES_PER_SPEED_INCREASE = 10; 
+        const SPEED_UP_MULTIPLIER = 0.83; // <<< REDUCED further from 0.85 for faster speed progression
+        const LOCK_DELAY_DURATION = 500;
+        let lastDropTime = 0; let lockDelayStartTime = 0; let isLockDelayActive = false; 
+        let nextSpeedUpMilestone = LINES_PER_SPEED_INCREASE;
 
         // --- Matrix Background ---
         const MATRIX_FIXED_SPAWN_CHANCE = 0.015; // Current: 0.015
