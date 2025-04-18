@@ -2,15 +2,19 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to the highScore document within the scores collection
-    match /scores/highScore {
-      allow read, write: if true; // Allows anyone to read/write the high score
-                                   // Consider adding authentication later: if request.auth != null;
+    // Allow reading and creating documents in the 'leaderboard' collection
+    match /leaderboard/{scoreId} {
+      allow read, create: if true; // Allows anyone to read/create leaderboard entries
     }
 
-    // You might want to deny access to other paths by default
+    // Allow read/write access to the single highScore document within the scores collection
+    match /scores/highScore {
+      allow read, write: if true; // Allows anyone to read/write the single high score document
+    }
+
+    // Deny all other access by default (good practice, though often the default)
     // match /{document=**} {
-    //   allow read, write: if false;
+    //  allow read, write: if false;
     // }
   }
 }

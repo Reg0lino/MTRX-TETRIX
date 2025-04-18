@@ -260,11 +260,12 @@
         const submitScoreButton = document.getElementById('submit-score-button');
         const saveStatusMessage = document.getElementById('save-status-message');
         const restartButton = document.getElementById('restart-button');
+        const saveScoreSection = document.getElementById('save-score-section'); // Added save score section retrieval
 
         const ctx = canvas.getContext('2d');
-        // Updated check to include new overlay elements
+        // Updated check to include new overlay elements AND saveScoreSection
         if (!canvas || !promptElement || !ctx || !promptMainText || !promptFullscreenText || !promptVersionText || !promptInstructionsText || !highScoreDisplayElement ||
-            !gameOverOverlay || !gameOverScoreEl || !gameOverLinesEl || !gameOverHighscoreEl || !gameOverLeaderboardBody || !playerNameInput || !submitScoreButton || !saveStatusMessage || !restartButton) { // Added checks for new elements
+            !gameOverOverlay || !gameOverScoreEl || !gameOverLinesEl || !gameOverHighscoreEl || !gameOverLeaderboardBody || !playerNameInput || !submitScoreButton || !saveStatusMessage || !restartButton || !saveScoreSection) { // Added saveScoreSection check
             alert("CRITICAL ERROR: Elements missing.");
             return;
         }
@@ -350,9 +351,19 @@
         const PAUSE_MENU_CLOSE_BUTTON_SIZE = 30;
         const PAUSE_MENU_CLOSE_BUTTON_MARGIN = 12;
         let pauseMenuElements = {}; let activeSlider = null;
+        let pauseMenuInitialized = false; // Flag to initialize elements once
+        let pauseLeaderboardData = null; // <<< ADDED: To store leaderboard scores for pause menu
+        let pauseLeaderboardScrollY = 0; // <<< ADDED: Scroll position for pause leaderboard
+        let activeScrollArea = null; // <<< ADDED: To track if dragging inside leaderboard
 
         // --- Touch Controls ---
-        const SWIPE_THRESHOLD = 40; const SWIPE_TIME_LIMIT = 500; const TAP_TIME_LIMIT = 280; const TAP_MOVEMENT_THRESHOLD = 30; const SOFT_DROP_START_THRESHOLD = 20; const SOFT_DROP_MOVE_PER_PIXEL = 0.02; const HORIZONTAL_MOVE_PIXEL_THRESHOLD = 0.7;
+        const SWIPE_THRESHOLD = 40; // <<< REVERTED from 80
+        const SWIPE_TIME_LIMIT = 500;
+        const TAP_TIME_LIMIT = 280;
+        const TAP_MOVEMENT_THRESHOLD = 30; // <<< REVERTED from 60
+        const SOFT_DROP_START_THRESHOLD = 20;
+        const SOFT_DROP_MOVE_PER_PIXEL = 0.02;
+        const HORIZONTAL_MOVE_PIXEL_THRESHOLD = 0.7; // <<< REVERTED from 0.9
         let touchStartX = 0, touchStartY = 0, touchStartTime = 0; let isDraggingDown = false, isDraggingHorizontally = false; let lastSoftDropY = 0, lastHorizontalMoveX = 0; let horizontalMoveAccumulator = 0; let touchIdentifier = null;
 
         // --- Visual Effects ---
@@ -368,12 +379,6 @@
         // --- Firestore Database --- (Added)
         let db = null;
 
-        // --- Firebase Ready Promise ---
-        let resolveFirebaseReady;
-        const firebaseReadyPromise = new Promise(resolve => {
-            resolveFirebaseReady = resolve;
-        });
-
         // ===========================================
         // LOCAL STORAGE FUNCTIONS (Restored for non-score settings)
         // ===========================================
@@ -383,15 +388,14 @@
 
         // --- Firestore High Score Functions --- (Added)
         async function loadHighScoreFromFirestore() {
-            await firebaseReadyPromise; // Wait until DB is confirmed ready
             if (!db) {
-                console.warn("Firestore not initialized (loadHighScore), cannot load high score.");
-                highScore = 0; // Default to 0 if DB not ready
-                highScoreDisplayElement.textContent = `High Score: ${highScore}`;
+                console.error("DB not ready in loadHighScoreFromFirestore. Cannot load high score.");
+                highScoreDisplayElement.textContent = `High Score: Error`;
                 return;
             }
-            const docRef = db.collection("scores").doc("highScore");
+            console.log("Attempting to load high score from Firestore...");
             try {
+                const docRef = firebase.firestore().collection("scores").doc("highScore");
                 const doc = await docRef.get();
                 if (doc.exists) {
                     highScore = doc.data().score;
@@ -406,16 +410,15 @@
                     console.log("Created initial high score document in Firestore.");
                 }
             } catch (error) {
-                console.error("Error getting high score from Firestore: ", error);
+                console.error("Error getting high score from Firestore: ", error); // Log specific error
                 highScore = 0; // Default to 0 on error
-                highScoreDisplayElement.textContent = `High Score: 0`;
+                highScoreDisplayElement.textContent = `High Score: Error`; // Show error state
             }
         }
 
         async function saveHighScoreToFirestore() {
-            await firebaseReadyPromise; // Wait until DB is confirmed ready
             if (!db) {
-                console.warn("Firestore not initialized (saveHighScore), cannot save high score.");
+                console.warn("DB not ready in saveHighScoreToFirestore. Cannot save high score.");
                 return;
             }
             if (score > highScore) {
@@ -426,13 +429,13 @@
                     await docRef.set({ score: highScore });
                     console.log("New high score saved to Firestore:", highScore);
                 } catch (error) {
-                    console.error("Error saving high score to Firestore: ", error);
+                    console.error("Error saving high score to Firestore: ", error); // Log specific error
                     // Optionally inform the user about the failure
                 }
             }
         }
 
-        // Modified loadSettings - still attempts to get instance, but promise handles readiness
+        // Modified loadSettings - checks for firebase and attempts to get db
         function loadSettings() {
             // Load other settings from local storage as before
             settings_ghostAlpha = clamp(loadFromLocalStorage('ghostAlpha', 0.05), 0.01, 0.10);
@@ -442,19 +445,26 @@
             console.log("Non-score settings Loaded:", { settings_ghostAlpha, settings_useWireframeBlocks, settings_sfxEnabled, settings_boardBackgroundAlpha });
 
             // Get Firestore instance (assuming init.js handled initialization)
-            try {
-                if (typeof firebase !== 'undefined' && typeof firebase.firestore === 'function') {
+            console.log("loadSettings: Checking Firebase availability...");
+            if (typeof firebase !== 'undefined' && typeof firebase.firestore === 'function') {
+                 console.log(`   Firebase found. Apps length: ${firebase.apps.length}`);
+                try {
                     db = firebase.firestore();
-                    console.log("Firestore instance obtained from initialized Firebase app.");
-                    loadHighScoreFromFirestore(); // Load score after getting instance
-                } else {
-                    console.warn("Firebase or Firestore not ready when loadSettings called.");
-                     // We might try again later or rely on setup(false) to load score
-                    // highScoreDisplayElement.textContent = "High Score: Loading..."; // This might be set before promise resolves
+                    console.log("   Firestore instance obtained: ", db ? "Success" : "Failed");
+                    if(db) {
+                        loadHighScoreFromFirestore(); // Load score immediately if db obtained
+                    } else {
+                        highScoreDisplayElement.textContent = "High Score: Error (DB null)";
+                    }
+                } catch (e) {
+                    console.error("   Error accessing Firestore: ", e); // Log specific error
+                    db = null; // Ensure db is null on error
+                    highScoreDisplayElement.textContent = "High Score: Error (Catch)";
                 }
-            } catch (e) {
-                console.error("Error accessing Firestore: ", e);
-                highScoreDisplayElement.textContent = "High Score: Error";
+            } else {
+                console.warn("   Firebase or Firestore not available when loadSettings called.");
+                highScoreDisplayElement.textContent = "High Score: Error (No FB)";
+                // We will try again in setup(false) if game starts
             }
         }
 
@@ -491,8 +501,27 @@
         function isPointInRect(x, y, rect) { return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height; }
         function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
         function resumeGame() { if (!isPaused || gameOver) return; isPaused = false; if (gameStartTime > 0) { const d = performance.now() - (lastFrameTime || gameStartTime); lastDropTime += d; if (isLockDelayActive) lockDelayStartTime += d; } SOUNDS.PAUSE_OFF(); }
-        function pauseGame() { if (isPaused || gameOver) return; isPaused = true; activeSlider = null; SOUNDS.PAUSE_ON(); }
-        function togglePause() { if (gameOver || gameStartTime === 0) return; if (isPaused) { resumeGame(); } else { pauseGame(); } }
+        function pauseGame() { if (isPaused || gameOver) return; isPaused = true; activeSlider = null; activeScrollArea = null; // Reset scroll tracking
+            pauseLeaderboardScrollY = 0; // Reset scroll position
+            if (!pauseMenuInitialized) {
+                initializePauseMenuElements();
+                pauseMenuInitialized = true;
+            }
+            loadPauseMenuLeaderboard(); // <<< ADDED: Load leaderboard data when pausing
+            SOUNDS.PAUSE_ON();
+        }
+        function togglePause() {
+             if (gameOver || gameStartTime === 0) return;
+             if (isPaused) {
+                 resumeGame();
+             } else {
+                 pauseGame();
+                 if (!pauseMenuInitialized) { // <<< ADDED: Initialize elements on first pause
+                     initializePauseMenuElements();
+                     pauseMenuInitialized = true;
+                 }
+             }
+         }
 
         // --- Text Wrapping Helper ---
         function wrapText(context, text, x, y, maxWidth, lineHeight) {
@@ -580,16 +609,10 @@
                         // <<< DEBUG LOGGING ADDED >>>
                         // console.log('isValidMove check:', { r, c, shapeY: y, shapeX: x, bR, bC, boardVal: (bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OutOfBounds' });
                         if (bR < 0 || bR >= boardHeight || bC < 0 || bC >= boardWidth || (bR >= 0 && board[bR][bC] !== 0)) {
-                            // <<< DEBUG LOGGING ADDED >>>
-                            console.warn('isValidMove FAILED:', {
-                                r, c, shapeY: y, shapeX: x, bR, bC,
-                                reason: bR < 0 ? 'Too high' :
-                                        bR >= boardHeight ? 'Too low' :
-                                        bC < 0 ? 'Too left' :
-                                        bC >= boardWidth ? 'Too right' :
-                                        (bR >= 0 && board[bR][bC] !== 0) ? `Collision with board[${bR}][${bC}] = ${board[bR][bC]}` : 'Unknown'
-                            });
-                            return false;
+                            // <<< SIMPLER DEBUG LOGGING ADDED >>>
+                            console.warn(`isValidMove fail check: bR=${bR}, bC=${bC}, boardH=${boardHeight}, boardW=${boardWidth}, boardVal=${(bR >= 0 && bR < boardHeight && bC >= 0 && bC < boardWidth) ? board[bR][bC] : 'OOB'}`);
+                            // <<< END DEBUG LOGGING >>>
+                            return false; // Invalid move
                         }
                     }
                 }
@@ -597,7 +620,38 @@
             return true;
         }
         function movePiece(dX, dY) { if (!currentPiece || isPaused || gameOver) return { moved: false, needsLock: false }; if (dY > 0 && isLockDelayActive) return { moved: false, needsLock: true }; if (isValidMove(currentPiece.shape, currentRow + dY, currentCol + dX)) { const oL = isLockDelayActive; currentCol += dX; currentRow += dY; if (dY > 0) { isLockDelayActive = false; } else if (dX !== 0 && oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } const nL = dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol); return { moved: true, needsLock: nL }; } if (dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { return { moved: false, needsLock: true }; } } return { moved: false, needsLock: false }; }
-        function hardDrop() { if (!currentPiece || isPaused || gameOver) return; if (isLockDelayActive) { lockPiece(); return; } const gR = calculateGhostPosition(); if (gR > currentRow) { SOUNDS.HARD_DROP(); currentRow = gR; if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } } else { lockPiece(); } } else { if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } else { lockPiece(); } } else { lockPiece(); } } }
+        function hardDrop() {
+            if (!currentPiece || isPaused || gameOver) return; // <<< ADDED gameOver CHECK HERE
+
+            if (isLockDelayActive) {
+                lockPiece();
+                return;
+            }
+            const gR = calculateGhostPosition();
+            if (gR > currentRow) {
+                SOUNDS.HARD_DROP();
+                currentRow = gR;
+                if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
+                    if (!isLockDelayActive) {
+                        isLockDelayActive = true;
+                        lockDelayStartTime = performance.now();
+                    }
+                } else {
+                    lockPiece();
+                }
+            } else {
+                if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
+                    if (!isLockDelayActive) {
+                        isLockDelayActive = true;
+                        lockDelayStartTime = performance.now();
+                    } else {
+                        lockPiece();
+                    }
+                } else {
+                    lockPiece();
+                }
+            }
+        }
         function softDrop() { if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; const mR = movePiece(0, 1); if (mR.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; } else if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false; }
         function lockPiece() {
             if(!currentPiece || isPaused || gameOver) return;
@@ -672,7 +726,67 @@
         function drawGame(timestamp){ if (!ctx || blockSize <= 0) return; ctx.fillStyle = `rgba(0, 0, 0, ${settings_boardBackgroundAlpha})`; ctx.fillRect(boardXOffset, boardYOffset, boardWidth * blockSize, boardHeight * blockSize); drawBoard(timestamp); if (currentPiece && !gameOver) { const gR = calculateGhostPosition(); if (gR > currentRow) { drawPiece(currentPiece.shape, gR, currentCol, currentPiece.colorIndex, true, timestamp); } drawPiece(currentPiece.shape, currentRow, currentCol, currentPiece.colorIndex, false, timestamp); } }
         function drawScoreAndLines() { if (!ctx || !width || !height) return; const dF = `bold ${SCORE_LINES_FONT_SIZE}px monospace`; ctx.font = dF; let sS = `${SCORE_LABEL} ${score.toString().padStart(6,'0')}`; let lS = `${LINES_LABEL} ${totalLinesCleared.toString().padStart(3,'0')}`; let dSS = sS; let dLS = lS; let dC = SCORE_COLOR_BASE; let oX = 0, oY = 0; if (Math.random() < SCORE_GLITCH_CHANCE) { dSS = glitchText(sS, SCORE_GLITCH_INTENSITY); dLS = glitchText(lS, SCORE_GLITCH_INTENSITY); dC = SCORE_COLOR_GLITCH; oX = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; oY = (Math.random() - 0.5) * SCORE_GLITCH_OFFSET * 2; } const sM = ctx.measureText(dSS); const lM = ctx.measureText(dLS); const tTW = sM.width + SCORE_LINES_GAP + lM.width; const tH = SCORE_LINES_FONT_SIZE; const bW = tTW + SCORE_LINES_BG_PADDING_X * 2; const bH = tH + SCORE_LINES_BG_PADDING_Y * 2; const bX = width / 2 - bW / 2; const bY = height - bH - SCORE_LINES_Y_MARGIN; const drY = bY + SCORE_LINES_BG_PADDING_Y + oY; ctx.fillStyle = `rgba(0, 0, 0, ${SCORE_LINES_BG_OPACITY})`; ctx.fillRect(bX, bY, bW, bH); ctx.strokeStyle = 'rgba(100, 255, 100, 0.3)'; ctx.lineWidth = 0.5; ctx.strokeRect(bX, bY, bW, bH); ctx.font = dF; ctx.fillStyle = dC; ctx.textBaseline = 'top'; const scX = bX + SCORE_LINES_BG_PADDING_X + oX; ctx.textAlign = 'left'; try { ctx.fillText(dSS, scX, drY); } catch(e) {} const liX = bX + bW - SCORE_LINES_BG_PADDING_X + oX; ctx.textAlign = 'right'; try { ctx.fillText(dLS, liX, drY); } catch(e) {} ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
         function drawTitle() { if (!ctx || !width || !height) return; const fS = Math.floor(height * TITLE_FONT_SIZE_RATIO); ctx.font = `bold ${fS}px monospace`; ctx.fillStyle = TITLE_COLOR; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tX = width / 2 + (Math.random() - 0.5) * 4; const tY = height / 2 + (Math.random() - 0.5) * 4; let tTD = TITLE_TEXT; if (Math.random() < 0.03) { tTD = glitchText(TITLE_TEXT, 0.2, ['#', '*', '!', '?']); } ctx.fillText(tTD, tX, tY); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; }
-        function drawSettingsIcon() { if (!ctx || isPaused || gameOver) return; const x = settingsButtonRect.x; const y = settingsButtonRect.y; const s = settingsButtonRect.width; const hS = s / 2; const cX = x + hS; const cY = y + hS; const iR = s * 0.2; const oR = s * 0.4; const t = 8; const tD = s * 0.1; ctx.strokeStyle = 'rgba(150, 255, 150, 0.7)'; ctx.fillStyle = 'rgba(50, 150, 50, 0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cX, cY, iR, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); for (let i = 0; i < t; i++) { const a = (i / t) * Math.PI * 2; const nA = ((i + 0.5) / t) * Math.PI * 2; const aTE = ((i+1)/t) * Math.PI * 2; const x1 = cX + Math.cos(a) * oR; const y1 = cY + Math.sin(a) * oR; const xT = cX + Math.cos(nA) * (oR + tD); const yT = cY + Math.sin(nA) * (oR + tD); const x2 = cX + Math.cos(aTE) * oR; const y2 = cY + Math.sin(aTE) * oR; if (i === 0) ctx.moveTo(x1, y1); else ctx.lineTo(x1, y1); ctx.lineTo(xT, yT); ctx.lineTo(x2, y2); } ctx.closePath(); ctx.stroke(); ctx.fill(); }
+        function drawSettingsIcon() {
+            if (!ctx || isPaused || gameOver) return;
+
+            const x = settingsButtonRect.x;
+            const y = settingsButtonRect.y;
+            const s = settingsButtonRect.width; // Size (width/height)
+            const cx = x + s / 2; // Center X
+            const cy = y + s / 2; // Center Y
+
+            const numTeeth = 6;
+            const innerRadius = s * 0.2;  // Radius of the central hole
+            const outerRadius = s * 0.4;  // Radius to the base of the teeth
+            const toothTipRadius = s * 0.48; // Radius to the tip of the teeth
+            const toothWidthAngle = Math.PI / numTeeth * 0.6; // Angular width of each tooth
+
+            // Style
+            ctx.fillStyle = 'rgba(50, 150, 50, 0.7)'; // Slightly more opaque fill
+            ctx.strokeStyle = 'rgba(150, 255, 150, 0.8)'; // Slightly more opaque stroke
+            ctx.lineWidth = 1.5; // Slightly thinner line
+
+            ctx.beginPath();
+
+            // Draw Teeth
+            for (let i = 0; i < numTeeth; i++) {
+                const angle = (i / numTeeth) * Math.PI * 2;
+
+                // Point 1: Inner corner of tooth base (clockwise)
+                let currentAngle = angle - toothWidthAngle / 2;
+                ctx.lineTo(cx + Math.cos(currentAngle) * outerRadius, cy + Math.sin(currentAngle) * outerRadius);
+
+                // Point 2: Outer corner of tooth tip (clockwise)
+                ctx.lineTo(cx + Math.cos(currentAngle) * toothTipRadius, cy + Math.sin(currentAngle) * toothTipRadius);
+
+                // Point 3: Outer corner of tooth tip (counter-clockwise)
+                currentAngle = angle + toothWidthAngle / 2;
+                ctx.lineTo(cx + Math.cos(currentAngle) * toothTipRadius, cy + Math.sin(currentAngle) * toothTipRadius);
+
+                // Point 4: Inner corner of tooth base (counter-clockwise)
+                ctx.lineTo(cx + Math.cos(currentAngle) * outerRadius, cy + Math.sin(currentAngle) * outerRadius);
+            }
+            ctx.closePath(); // Close the outer path (teeth)
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw Central Hole
+            ctx.beginPath();
+            ctx.arc(cx, cy, innerRadius, 0, Math.PI * 2);
+            // Cut out the hole - need to change composite operation
+            ctx.save(); // Save current state
+            ctx.clip(); // Clip to the hole path
+            ctx.clearRect(x, y, s, s); // Clear the area inside the hole (important)
+            // Alternatively, fill with background color if clearRect isn't cutting through existing fill
+            // ctx.fillStyle = 'black'; // Or your background color
+            // ctx.fill();
+            ctx.restore(); // Restore state (removes clipping path)
+
+             // Stroke the central hole border separately
+             ctx.beginPath();
+             ctx.arc(cx, cy, innerRadius, 0, Math.PI * 2);
+             ctx.stroke();
+        }
 
         // ===========================================
         // Game Loop (Stable)
@@ -780,37 +894,442 @@
         // Pause Menu Interaction (Handles new slider/button)
         // ===========================================
         function handlePauseMenuInteraction(x, y, isTapEnd = false) {
-            if (!isPaused || gameOver) return false; let interactedWithElement = false;
-            if (!isTapEnd && activeSlider) { const el = pauseMenuElements[activeSlider]; if (el && el.type === 'slider') { const rX = clamp(x - el.rect.x, 0, el.rect.width); const ratio = rX / el.rect.width; let nV = el.min + ratio * (el.max - el.min); if (el.setting === 'ghostAlpha') { settings_ghostAlpha = clamp(nV, el.min, el.max); } else if (el.setting === 'boardBackgroundAlpha') { settings_boardBackgroundAlpha = clamp(nV, el.min, el.max); } saveSettings(); interactedWithElement = true; return true; } }
-            if (!isTapEnd && !activeSlider) { for (const key in pauseMenuElements) { const el = pauseMenuElements[key]; if (!el || !el.rect) continue; if (el.type === 'slider') { const hDSq = (x - el.handleX)**2 + (y - el.handleY)**2; const hRSq = (PAUSE_MENU_SLIDER_HANDLE_SIZE * 1.5)**2; if (hDSq <= hRSq || isPointInRect(x, y, el.rect)) { activeSlider = key; interactedWithElement = true; const rX = clamp(x - el.rect.x, 0, el.rect.width); const ratio = rX / el.rect.width; let nV = el.min + ratio * (el.max - el.min); if (el.setting === 'ghostAlpha') { settings_ghostAlpha = clamp(nV, el.min, el.max); } else if (el.setting === 'boardBackgroundAlpha') { settings_boardBackgroundAlpha = clamp(nV, el.min, el.max); } saveSettings(); SOUNDS.UI_CLICK(); break; } } else if (el.type === 'button' || el.type === 'closeButton') { if (isPointInRect(x, y, el.rect)) { interactedWithElement = true; break; } } } }
-            if (isTapEnd && !activeSlider) { for (const key in pauseMenuElements) { const el = pauseMenuElements[key]; if (!el || !el.rect) continue; if (el.type === 'button' && isPointInRect(x, y, el.rect)) { interactedWithElement = true; if (el.action === 'toggleFullscreen') { toggleFullscreen(); } else if (el.setting === 'useWireframeBlocks') { settings_useWireframeBlocks = !settings_useWireframeBlocks; } else if (el.setting === 'sfxEnabled') { settings_sfxEnabled = !settings_sfxEnabled; } saveSettings(); SOUNDS.UI_CLICK(); break; } else if (el.type === 'closeButton' && isPointInRect(x, y, el.rect)) { interactedWithElement = true; resumeGame(); return true; } } }
-            if (isTapEnd && !interactedWithElement && !activeSlider && !isPointInRect(x, y, settingsButtonRect)) { resumeGame(); return true; }
-            return interactedWithElement || !!activeSlider;
+            if (!isPaused || gameOver) return false;
+            let interactedWithElement = false;
+            const leaderboardRect = pauseMenuElements.leaderboard?.rect; // Use optional chaining
+
+            // --- Handle Touch Scroll Drag --- 
+            if (!isTapEnd && activeScrollArea === 'leaderboard') {
+                const deltaY = y - touchStartY; // Use the specific touch start Y
+                const leaderboardContentHeight = pauseLeaderboardData ? pauseLeaderboardData.length * (PAUSE_MENU_VALUE_FONT_SIZE * 0.9) : 0;
+                const maxScroll = Math.max(0, leaderboardContentHeight - leaderboardRect.height + 10);
+                // Adjust scroll based on drag delta - invert direction for natural scrolling
+                pauseLeaderboardScrollY = clamp(pauseLeaderboardScrollY - deltaY * 1.5, 0, maxScroll); // Adjust multiplier for sensitivity
+                touchStartY = y; // Update start Y for continuous dragging
+                interactedWithElement = true;
+                return true; // Prevent other interactions while scrolling
+            }
+            // --- End Handle Touch Scroll Drag ---
+
+            // Handle Slider Drag
+            if (!isTapEnd && activeSlider) {
+                const el = pauseMenuElements[activeSlider];
+                if (el && el.type === 'slider') {
+                    const rX = clamp(x - el.rect.x, 0, el.rect.width); // Relative X within slider bounds
+                    const ratio = rX / el.rect.width;
+                    let newValue = el.min + ratio * (el.max - el.min);
+
+                    // Update the setting based on which slider is active
+                    if (el.setting === 'ghostAlpha') {
+                        settings_ghostAlpha = clamp(newValue, el.min, el.max);
+                    } else if (el.setting === 'boardBackgroundAlpha') {
+                        settings_boardBackgroundAlpha = clamp(newValue, el.min, el.max);
+                    }
+                    saveSettings(); // Persist the change
+                    interactedWithElement = true;
+                    return true; // Prevent other interactions while dragging slider
+                }
+            }
+
+            // Handle Activation of Controls (Start Scroll, Start Slider Drag, Identify Button Area)
+            if (!isTapEnd && !activeSlider && activeScrollArea === null) { // Only check for new activations if not already dragging
+                 // Check for starting scroll drag in leaderboard
+                 if (leaderboardRect && isPointInRect(x, y, leaderboardRect)) {
+                    activeScrollArea = 'leaderboard';
+                    touchStartY = y; // Store initial Y for scroll calculation
+                    interactedWithElement = true;
+                    // Don't return yet, let slider check run too just in case of overlap
+                }
+
+                 // Check for starting slider drag
+                 for (const key in pauseMenuElements) {
+                     const el = pauseMenuElements[key];
+                     if (!el || !el.rect || el.type !== 'slider') continue;
+
+                     // Check if touch is near the handle or on the track
+                     const handleDistSq = (x - el.handleX)**2 + (y - el.handleY)**2;
+                     const handleRadiusSq = (PAUSE_MENU_SLIDER_HANDLE_SIZE * 1.5)**2; // Generous handle hit area
+                     if (handleDistSq <= handleRadiusSq || isPointInRect(x, y, el.rect)) {
+                        activeSlider = key; // Activate this slider
+                        interactedWithElement = true;
+                        // Immediately update value based on initial tap position
+                        const rX = clamp(x - el.rect.x, 0, el.rect.width);
+                        const ratio = rX / el.rect.width;
+                        let newValue = el.min + ratio * (el.max - el.min);
+                        if (el.setting === 'ghostAlpha') settings_ghostAlpha = clamp(newValue, el.min, el.max);
+                        else if (el.setting === 'boardBackgroundAlpha') settings_boardBackgroundAlpha = clamp(newValue, el.min, el.max);
+                        saveSettings();
+                        SOUNDS.UI_CLICK(); // Play sound on initial activation
+                        break; // Stop checking once a slider is activated
+                    }
+                 }
+                 // If we started scrolling or dragging a slider, return true now
+                 if (activeScrollArea || activeSlider) return true;
+            }
+
+            // Handle Button/Close Clicks on Tap End
+            if (isTapEnd) {
+                const wasScrolling = activeScrollArea === 'leaderboard'; // Check if we *were* scrolling
+                activeScrollArea = null; // Always reset scroll area on tap end
+                if (wasScrolling) {
+                     // If the tap ended while scrolling, consume the event and do nothing else
+                     return true;
+                 }
+
+                 // If not scrolling and not dragging a slider, check for button clicks
+                if (!activeSlider) {
+                    for (const key in pauseMenuElements) {
+                        const el = pauseMenuElements[key];
+                        if (!el || !el.rect) continue;
+
+                        if (el.type === 'button' && isPointInRect(x, y, el.rect)) {
+                            interactedWithElement = true; // <<< FIX: Set flag HERE for button clicks
+                            if (el.action === 'toggleFullscreen') {
+                                toggleFullscreen();
+                            } else if (el.setting === 'useWireframeBlocks') {
+                                settings_useWireframeBlocks = !settings_useWireframeBlocks;
+                            } else if (el.setting === 'sfxEnabled') {
+                                settings_sfxEnabled = !settings_sfxEnabled;
+                            }
+                            saveSettings();
+                            SOUNDS.UI_CLICK();
+                            break; // Button found and handled
+                        } else if (el.type === 'closeButton' && isPointInRect(x, y, el.rect)) {
+                            interactedWithElement = true; // <<< FIX: Set flag HERE for close button click
+                            resumeGame();
+                            return true; // Resume game immediately
+                        }
+                    }
+                }
+            }
+
+            // Check if tap ended on background to resume game
+            // <<< TEMP DEBUG: Comment out background resume logic >>>
+            /*
+            if (isTapEnd && !interactedWithElement && !activeSlider && activeScrollArea === null && !isPointInRect(x, y, settingsButtonRect)) { // Added activeScrollArea check
+                // Make sure it wasn't a click on any pause menu element rect (redundant but safe)
+                let clickedPauseElement = false;
+                for (const key in pauseMenuElements) {
+                    if (pauseMenuElements[key].rect && isPointInRect(x, y, pauseMenuElements[key].rect)) {
+                        clickedPauseElement = true;
+                        break;
+                    }
+                }
+                if (!clickedPauseElement) {
+                    resumeGame();
+                    return true; // Resumed game
+                }
+            }
+            */
+
+            // Return true if any interaction occurred (slider drag, scroll drag, button click identified/handled)
+            return interactedWithElement || !!activeSlider || activeScrollArea !== null; // Return true if scrolling or slider active
         }
 
         // ===========================================
         // Event Listeners (Stable)
         // ===========================================
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if (gameOver) { setup(false); return; } const touch = e.changedTouches[0]; if (!touch) return; const tX = touch.clientX; const tY = touch.clientY; if (isPaused && gameStartTime > 0) { touchIdentifier = touch.identifier; if (handlePauseMenuInteraction(tX, tY, false)) { return; } } else if (!isPaused && !gameOver) { if (isPointInRect(tX, tY, settingsButtonRect)) { togglePause(); touchIdentifier = null; return; } touchIdentifier = touch.identifier; touchStartX = tX; touchStartY = tY; touchStartTime = performance.now(); isDraggingDown = false; isDraggingHorizontally = false; lastSoftDropY = tY; lastHorizontalMoveX = tX; horizontalMoveAccumulator = 0; } }, { passive: false });
-        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) return; const cX = touch.clientX; const cY = touch.clientY; if (isPaused && activeSlider) { handlePauseMenuInteraction(cX, cY, false); return; } if (isPaused || gameOver || !currentPiece) return; const tDX = cX - touchStartX; const tDY = cY - touchStartY; const iDX = cX - lastHorizontalMoveX; const iDY = cY - lastSoftDropY; const hD = Math.abs(tDX) > Math.abs(tDY) * 1.2 && Math.abs(tDX) > TAP_MOVEMENT_THRESHOLD / 2; const vD = Math.abs(tDY) > Math.abs(tDX) * 1.2 && tDY > SOFT_DROP_START_THRESHOLD; if (!isDraggingDown && (isDraggingHorizontally || hD)) { if (!isDraggingHorizontally) isDraggingHorizontally = true; horizontalMoveAccumulator += iDX; const eBS = Math.max(10, blockSize); const rPD = eBS * HORIZONTAL_MOVE_PIXEL_THRESHOLD; while (Math.abs(horizontalMoveAccumulator) >= rPD) { const dir = horizontalMoveAccumulator > 0 ? 1 : -1; if (movePiece(dir, 0).moved) { SOUNDS.MOVE(); horizontalMoveAccumulator -= dir * rPD; } else { horizontalMoveAccumulator = 0; break; } } lastHorizontalMoveX = cX; } else if (!isDraggingHorizontally && (isDraggingDown || vD)) { if (!isDraggingDown) isDraggingDown = true; if (!isLockDelayActive) { let pDSLD = iDY; let bTD = Math.floor(pDSLD * SOFT_DROP_MOVE_PER_PIXEL); if (bTD > 0) { let sD = 0; for (let i = 0; i < bTD; i++) { if (softDrop()) sD++; else break; } if (sD > 0) lastSoftDropY = Math.min(lastSoftDropY + sD / SOFT_DROP_MOVE_PER_PIXEL, cY); } } lastSoftDropY = cY; } else { lastHorizontalMoveX = cX; lastSoftDropY = cY; } }, { passive: false });
-        canvas.addEventListener('touchend', (e) => { e.preventDefault(); const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (!touch) { const gT = e.changedTouches[0]; if (isPaused && gameStartTime > 0 && gT) { handlePauseMenuInteraction(gT.clientX, gT.clientY, true); } return; } touchIdentifier = null; const tEX = touch.clientX; const tEY = touch.clientY; if (activeSlider) { activeSlider = null; return; } if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(tEX, tEY, true)) { return; } } if (isPaused || gameOver) return; const wDD = isDraggingDown; const wDH = isDraggingHorizontally; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; const eT = performance.now() - touchStartTime; const dX = tEX - touchStartX; const dY = tEY - touchStartY; let aT = false; if (!wDD && !wDH && eT < TAP_TIME_LIMIT && Math.abs(dX) < TAP_MOVEMENT_THRESHOLD && Math.abs(dY) < TAP_MOVEMENT_THRESHOLD) { let tH = (holdBoxRect.width > 0 && isPointInRect(tEX, tEY, holdBoxRect)); let tN = (nextBoxRect.width > 0 && isPointInRect(tEX, tEY, nextBoxRect)); if (tH) { swapPiece(); aT = true; } else if (tN) { aT = false; } else { rotatePiece(); aT = true; } } if (!aT && !wDD && !wDH && eT < SWIPE_TIME_LIMIT) { if (Math.abs(dY) > SWIPE_THRESHOLD && Math.abs(dY) > Math.abs(dX) * 1.2) { hardDrop(); aT = true; } } if ((wDD || wDH) && !aT && currentPiece) { if (!isLockDelayActive && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } aT = true; } }, { passive: false });
-        canvas.addEventListener('touchcancel', (e) => { const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier); if (touch) { touchIdentifier = null; activeSlider = null; isDraggingDown = false; isDraggingHorizontally = false; horizontalMoveAccumulator = 0; console.log("Tracked touch cancelled"); } }, { passive: false });
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            initAudio();
+            if (gameOver) {
+                // If game over, any touch should restart (consistent with old version's mousedown/enter)
+                // We use handleStartInteraction which calls restartGame() when gameOver is true.
+                handleStartInteraction();
+                return;
+            }
+            const touch = e.changedTouches[0];
+            if (!touch) return;
+            const tX = touch.clientX;
+            const tY = touch.clientY;
+
+            // <<< NEW: Handle Pause Menu Interaction FIRST >>>
+            if (isPaused && gameStartTime > 0) {
+                touchIdentifier = touch.identifier;
+                // Store initial touch position for potential scroll drag
+                touchStartX = tX; // Store start for scroll delta calculation
+                touchStartY = tY;
+                if (handlePauseMenuInteraction(tX, tY, false)) {
+                    return; // Interaction handled by pause menu, stop here
+                }
+                // If pause menu didn't handle it, don't proceed to game logic
+                return;
+            }
+            // <<< END NEW PAUSE HANDLING >>>
+
+            // --- OLD/Reverted Gameplay Touch Start Logic ---
+            if (!isPaused && !gameOver) { // Only run if game is active
+                if (isPointInRect(tX, tY, settingsButtonRect)) {
+                    togglePause(); // Allow pausing via icon tap
+                    touchIdentifier = null; // Don't track this touch further
+                    return;
+                }
+                // Start tracking touch for gameplay gestures
+                touchIdentifier = touch.identifier;
+                touchStartX = tX;
+                touchStartY = tY;
+                touchStartTime = performance.now();
+                isDraggingDown = false;
+                isDraggingHorizontally = false;
+                lastSoftDropY = tY;
+                lastHorizontalMoveX = tX;
+                horizontalMoveAccumulator = 0;
+            }
+            // --- END OLD/Reverted Gameplay Touch Start Logic ---
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier);
+            if (!touch) return; // Only process the tracked touch
+            const cX = touch.clientX;
+            const cY = touch.clientY;
+
+            // <<< NEW: Handle Pause Menu Interaction (Slider Drag / Scroll Drag) FIRST >>>
+            if (isPaused && gameStartTime > 0 && (activeSlider || activeScrollArea)) {
+                 handlePauseMenuInteraction(cX, cY, false);
+                 return; // Interaction handled by pause menu, stop here
+             }
+            // <<< END NEW PAUSE HANDLING >>>
+
+             // --- OLD/Reverted Gameplay Touch Move Logic ---
+             if (isPaused || gameOver || !currentPiece) return; // Ignore move if paused, game over, or no piece
+
+             const tDX = cX - touchStartX; // Total delta from start
+             const tDY = cY - touchStartY; // Total delta from start
+             const iDX = cX - lastHorizontalMoveX; // Incremental delta X
+             const iDY = cY - lastSoftDropY; // Incremental delta Y
+
+             // Determine primary drag direction (more horizontal or vertical movement?)
+             const isPrimarilyHorizontal = Math.abs(tDX) > Math.abs(tDY) * 1.2 && Math.abs(tDX) > TAP_MOVEMENT_THRESHOLD / 2;
+             const isPrimarilyVertical = Math.abs(tDY) > Math.abs(tDX) * 1.2 && tDY > SOFT_DROP_START_THRESHOLD; // Only consider downward vertical drag significant
+
+             // Horizontal Drag Logic
+             if (!isDraggingDown && (isDraggingHorizontally || isPrimarilyHorizontal)) {
+                 if (!isDraggingHorizontally) isDraggingHorizontally = true; // Lock to horizontal drag
+                 horizontalMoveAccumulator += iDX;
+                 const effectiveBlockSize = Math.max(10, blockSize); // Avoid division by zero or tiny thresholds
+                 const requiredPixelsPerMove = effectiveBlockSize * HORIZONTAL_MOVE_PIXEL_THRESHOLD;
+
+                 while (Math.abs(horizontalMoveAccumulator) >= requiredPixelsPerMove) {
+                     const direction = horizontalMoveAccumulator > 0 ? 1 : -1;
+                     if (movePiece(direction, 0).moved) {
+                         SOUNDS.MOVE();
+                         horizontalMoveAccumulator -= direction * requiredPixelsPerMove; // Consume moved distance
+                     } else {
+                         horizontalMoveAccumulator = 0; // Stop if move failed (hit wall)
+                         break;
+                     }
+                 }
+                 lastHorizontalMoveX = cX; // Update last position for next incremental delta
+             }
+             // Vertical Drag (Soft Drop) Logic
+             else if (!isDraggingHorizontally && (isDraggingDown || isPrimarilyVertical)) {
+                 if (!isDraggingDown) isDraggingDown = true; // Lock to vertical drag
+
+                 if (!isLockDelayActive) { // Only allow soft drop if lock delay isn't active
+                     let pixelsDraggedSinceLastDrop = iDY;
+                     let blocksToDrop = Math.floor(pixelsDraggedSinceLastDrop * SOFT_DROP_MOVE_PER_PIXEL);
+
+                     if (blocksToDrop > 0) {
+                         let successfulDrops = 0;
+                         for (let i = 0; i < blocksToDrop; i++) {
+                             if (softDrop()) { // softDrop handles scoring and sound
+                                 successfulDrops++;
+                             } else {
+                                 break; // Stop if soft drop fails (piece landed or needs lock)
+                             }
+                         }
+                         // Update lastSoftDropY based on successful drops to avoid over-dropping
+                         // We estimate the pixel distance covered by successful drops
+                         if (successfulDrops > 0 && SOFT_DROP_MOVE_PER_PIXEL > 0) {
+                              lastSoftDropY = Math.min(lastSoftDropY + successfulDrops / SOFT_DROP_MOVE_PER_PIXEL, cY);
+                         }
+                     }
+                 }
+                 // Always update lastSoftDropY to current Y if dragging down,
+                 // unless we specifically adjusted it above for successful drops.
+                 // This prevents large jumps if the drop rate calculation isn't perfect.
+                 if (!(successfulDrops > 0)) {
+                     lastSoftDropY = cY;
+                 }
+
+             } else {
+                 // If not clearly dragging H or V, update both last positions
+                 lastHorizontalMoveX = cX;
+                 lastSoftDropY = cY;
+             }
+             // --- END OLD/Reverted Gameplay Touch Move Logic ---
+
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier);
+
+            // <<< NEW: Handle Pause Menu Interaction (Button Click / Scroll Release / Slider Release) FIRST >>>
+            if (!touch) {
+                // If the tracked touch isn't in changedTouches (maybe cancelled?),
+                // still try to handle pause menu interaction with the first available touch end event.
+                 const genericTouch = e.changedTouches[0];
+                 if (isPaused && gameStartTime > 0 && genericTouch) {
+                     if(handlePauseMenuInteraction(genericTouch.clientX, genericTouch.clientY, true)) {
+                         activeSlider = null; // Ensure deactivation on general touch end if pause handled it
+                         activeScrollArea = null;
+                     }
+                 }
+                 activeSlider = null; // Always ensure deactivation if tracked touch wasn't found
+                 activeScrollArea = null;
+                 touchIdentifier = null; // Clear identifier if tracked touch ended/cancelled
+                 return;
+            }
+
+            // We found the tracked touch ending
+            const tEX = touch.clientX;
+            const tEY = touch.clientY;
+            const currentTouchId = touchIdentifier; // Store before clearing
+            touchIdentifier = null; // Clear the tracked identifier
+
+             if (isPaused && gameStartTime > 0) {
+                 // Handle slider release, button click, or scroll end
+                 if (handlePauseMenuInteraction(tEX, tEY, true)) {
+                     activeSlider = null; // Ensure slider is deactivated
+                     activeScrollArea = null; // Ensure scroll area is deactivated
+                     return; // Interaction handled by pause menu, stop here
+                 }
+             }
+             // Ensure these are reset even if pause menu didn't explicitly handle the event
+             activeSlider = null;
+             activeScrollArea = null;
+             // <<< END NEW PAUSE HANDLING >>>
+
+
+             // --- OLD/Reverted Gameplay Touch End Logic ---
+             if (isPaused || gameOver) return; // Ignore if paused or game over
+
+             // Store drag state *before* resetting flags
+             const wasDraggingDown = isDraggingDown;
+             const wasDraggingHorizontally = isDraggingHorizontally;
+
+             // Reset dragging flags
+             isDraggingDown = false;
+             isDraggingHorizontally = false;
+             horizontalMoveAccumulator = 0; // Reset accumulator
+
+             const elapsedTime = performance.now() - touchStartTime;
+             const deltaX = tEX - touchStartX;
+             const deltaY = tEY - touchStartY;
+             const absDeltaX = Math.abs(deltaX);
+             const absDeltaY = Math.abs(deltaY);
+
+             let actionTaken = false;
+
+             // 1. Check for Tap (Rotate/Swap)
+             if (!wasDraggingDown && !wasDraggingHorizontally && // Wasn't dragging
+                 elapsedTime < TAP_TIME_LIMIT && // Within tap time
+                 absDeltaX < TAP_MOVEMENT_THRESHOLD && // Minimal X movement
+                 absDeltaY < TAP_MOVEMENT_THRESHOLD) { // Minimal Y movement
+
+                 let tappedHold = (holdBoxRect.width > 0 && isPointInRect(tEX, tEY, holdBoxRect));
+                 let tappedNext = (nextBoxRect.width > 0 && isPointInRect(tEX, tEY, nextBoxRect));
+
+                 if (tappedHold) {
+                     swapPiece();
+                     actionTaken = true;
+                 } else if (tappedNext) {
+                     // Tapping 'Next' area does nothing in original logic
+                     actionTaken = false; // Explicitly false, though default is false
+                 } else {
+                     // Tap anywhere else is rotate
+                     rotatePiece();
+                     actionTaken = true;
+                 }
+             }
+
+             // 2. Check for Swipe (Hard Drop) - Only if not already handled by tap
+             if (!actionTaken && !wasDraggingDown && !wasDraggingHorizontally && // Wasn't dragging
+                 elapsedTime < SWIPE_TIME_LIMIT) { // Within swipe time
+
+                 // Check for vertical swipe (significant Y movement, more Y than X)
+                 if (absDeltaY > SWIPE_THRESHOLD && absDeltaY > absDeltaX * 1.2) {
+                     // Original logic only considers downward swipe for hard drop implicitly
+                     // (Upward flick wasn't standard Tetris control)
+                     // Let's keep it simple: any significant vertical flick is hard drop
+                     hardDrop();
+                     actionTaken = true;
+                 }
+                 // Horizontal swipe wasn't explicitly handled in old touchend, drag logic covered movement
+             }
+
+             // 3. Handle end of Drag (Apply Lock Delay if needed)
+             // If dragging occurred and no other action (tap/swipe) was taken
+             if ((wasDraggingDown || wasDraggingHorizontally) && !actionTaken && currentPiece) {
+                 // Check if the piece is now in a position where it should lock
+                 if (!isLockDelayActive && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) {
+                     isLockDelayActive = true;
+                     lockDelayStartTime = performance.now();
+                 }
+                 actionTaken = true; // Consider drag-end finalization an action
+             }
+             // --- END OLD/Reverted Gameplay Touch End Logic ---
+
+        }, { passive: false });
+
+        canvas.addEventListener('touchcancel', (e) => {
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === touchIdentifier);
+            if (touch) {
+                 console.log("Tracked touch cancelled:", touch.identifier);
+                 touchIdentifier = null; // Stop tracking
+                 // Reset states associated with the touch
+                 activeSlider = null;
+                 activeScrollArea = null; // <<< ADDED: Reset scroll area on cancel
+                 isDraggingDown = false;
+                 isDraggingHorizontally = false;
+                 horizontalMoveAccumulator = 0;
+             } else {
+                 // If a non-tracked touch cancels, we probably don't need to do anything
+                 // unless it affects the pause menu state, which handlePauseMenuInteraction should manage.
+             }
+        }, { passive: false });
+
         // Changed listener from canvas to window
         window.addEventListener('keydown', (e) => {
-            if ((isPaused && gameStartTime === 0 && promptElement.style.display !== 'none') || gameOver) {
+            // Handle start/restart interaction specifically for Enter key
+            if (gameOver) {
                 if (e.key === 'Enter') {
-                    e.preventDefault(); handleStartInteraction(); return;
+                    e.preventDefault(); // Prevent default Enter behavior
+                    // Check if the name input is focused
+                    if (document.activeElement === playerNameInput) {
+                        submitScore(); // Submit score if input is focused
+                    } else {
+                        handleStartInteraction(); // Otherwise, restart game
+                    }
+                    return; // Don't process other keys if game over + Enter
+                }
+            } else if (isPaused && gameStartTime === 0 && promptElement.style.display !== 'none') {
+                 if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent default Enter behavior
+                    handleStartInteraction(); // Start the game
+                    return;
                 }
             }
-            if (e.key.toLowerCase() === 'p') {
+
+            // Handle pause key
+            // <<< FIX: Add check for e.key before using toLowerCase() >>>
+            if (e.key && e.key.toLowerCase() === 'p') {
                 e.preventDefault(); togglePause(); return;
             }
+
+            // Ignore other keys if paused, game over, or no piece
             if (isPaused || gameOver || !currentPiece) return;
-            // Added w, a, s, d to the check
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Shift', 'w', 'a', 's', 'd'].includes(e.key.toLowerCase()) || e.code === 'Space') {
+
+            // Handle in-game controls
+            // <<< FIX: Add check for e.key before using toLowerCase() >>>
+            const keyLower = e.key ? e.key.toLowerCase() : null;
+            if (keyLower && (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'shift', 'w', 'a', 's', 'd'].includes(keyLower) || e.code === 'Space')) {
                 e.preventDefault();
                 initAudio();
-                switch (e.key.toLowerCase()) {
+                switch (keyLower) { // Use the safe lowercased key
                     case 'arrowleft':
                     case 'a': // Added 'a'
                         if(movePiece(-1, 0).moved) SOUNDS.MOVE();
@@ -827,7 +1346,7 @@
                     case 'w': // Added 'w'
                         hardDrop();
                         break;
-                    case ' ': case 'spacebar':
+                    case ' ': case 'spacebar': // Keep spacebar check for robustness if needed
                         rotatePiece();
                         break;
                     case 'shift':
@@ -841,7 +1360,35 @@
         canvas.addEventListener('mousedown', (e) => { if (gameOver) { if (e.button === 0) { restartGame(); } return; } const mX = e.clientX; const mY = e.clientY; initAudio(); if (isPaused && gameStartTime > 0) { if (handlePauseMenuInteraction(mX, mY, false)) { e.preventDefault(); } return; } if (!isPaused && !gameOver) { if (isPointInRect(mX, mY, settingsButtonRect)) { togglePause(); e.preventDefault(); return; } if (e.button === 0) { let tH = (holdBoxRect.width > 0 && isPointInRect(mX, mY, holdBoxRect)); let tN = (nextBoxRect.width > 0 && isPointInRect(mX, mY, nextBoxRect)); if (tH) { swapPiece(); e.preventDefault(); } else if (!tN) { rotatePiece(); e.preventDefault(); } } else if (e.button === 2) { swapPiece(); e.preventDefault(); } } }); // <-- Added the missing closing parenthesis and semicolon
         canvas.addEventListener('mousemove', (e) => { if (isPaused && activeSlider && e.buttons === 1) { handlePauseMenuInteraction(e.clientX, e.clientY, false); e.preventDefault(); } });
         canvas.addEventListener('mouseup', (e) => { const mX = e.clientX; const mY = e.clientY; if (activeSlider) { activeSlider = null; e.preventDefault(); return; } if (isPaused && gameStartTime > 0 && e.button === 0) { if (handlePauseMenuInteraction(mX, mY, true)) { e.preventDefault(); } } });
-        window.addEventListener('resize', () => { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; calculateSizes(); MATRIX_setupStreams(); });
+        // <<< ADDED MOUSE WHEEL LISTENER FOR PAUSE LEADERBOARD SCROLL >>>
+        canvas.addEventListener('wheel', (e) => {
+            if (isPaused && gameStartTime > 0 && pauseMenuElements.leaderboard) {
+                const leaderboardRect = pauseMenuElements.leaderboard.rect;
+                if (isPointInRect(e.clientX, e.clientY, leaderboardRect)) {
+                    e.preventDefault(); // Prevent page scroll
+
+                    const scrollAmount = e.deltaY * 0.5; // Adjust multiplier for sensitivity
+                    const leaderboardContentHeight = pauseLeaderboardData ? pauseLeaderboardData.length * (PAUSE_MENU_VALUE_FONT_SIZE * 0.9) : 0;
+                    const maxScroll = Math.max(0, leaderboardContentHeight - leaderboardRect.height + 10); // +10 for padding
+
+                    pauseLeaderboardScrollY = clamp(pauseLeaderboardScrollY + scrollAmount, 0, maxScroll);
+                    // console.log(`ScrollY: ${pauseLeaderboardScrollY.toFixed(1)}, Max: ${maxScroll.toFixed(1)}`); // Optional debug log
+                }
+            }
+        }, { passive: false }); // Need passive:false to preventDefault
+
+        window.addEventListener('resize', () => { 
+            width = window.innerWidth; 
+            height = window.innerHeight; 
+            canvas.width = width; 
+            canvas.height = height; 
+            calculateSizes(); 
+            MATRIX_setupStreams(); 
+            // Re-initialize pause menu elements on resize if it was already shown
+            if (pauseMenuInitialized) {
+                 initializePauseMenuElements();
+            }
+        });
         promptElement.addEventListener('click', handleStartInteraction);
         setup(true);
         // Removed requestAnimationFrame(gameLoop) call from here
@@ -893,6 +1440,7 @@
             submitScoreButton.disabled = false;
             submitScoreButton.textContent = 'Save Score';
 
+            saveScoreSection.style.display = 'flex'; // <<< ADDED: Make save section visible
 
             // Load the leaderboard for the overlay
             loadGameOverLeaderboard();
@@ -902,19 +1450,19 @@
         }
 
         async function loadGameOverLeaderboard() {
-            await firebaseReadyPromise; // Wait until DB is confirmed ready
-
-            if (!gameOverLeaderboardBody) {
-                console.error("Game Over Leaderboard body element not found!");
+            const leaderboardBody = document.getElementById('game-over-leaderboard-body'); // Changed ID back
+            if (!leaderboardBody) {
+                console.error("Leaderboard body element not found.");
                 return;
             }
-            gameOverLeaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Loading...</td></tr>'; // Show loading state
-
-            if (!db) { // Double check db, though await should ensure it
-                console.warn("Firestore not ready (loadGameOverLeaderboard) after wait.");
-                gameOverLeaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Error: DB not ready.</td></tr>';
-                return;
+            if (!db) {
+                console.error("DB not ready in loadGameOverLeaderboard. Cannot load leaderboard.");
+                leaderboardBody.innerHTML = '<tr><td colspan="3">Error: Firestore not ready.</td></tr>';
+                return; // Don't proceed if db isn't ready
             }
+
+            leaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Loading...</td></tr>'; // Show loading state
+            console.log("Attempting to load leaderboard from Firestore...");
 
             try {
                 const querySnapshot = await db.collection("leaderboard")
@@ -922,16 +1470,16 @@
                                               .limit(100) // Fetch top 100
                                               .get();
 
-                gameOverLeaderboardBody.innerHTML = ''; // Clear loading/previous state
+                leaderboardBody.innerHTML = ''; // Clear loading/previous state
                 if (querySnapshot.empty) {
-                    gameOverLeaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Leaderboard is empty.</td></tr>';
+                    leaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Leaderboard is empty.</td></tr>';
                     return;
                 }
 
                 let rank = 1;
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const row = gameOverLeaderboardBody.insertRow();
+                    const row = leaderboardBody.insertRow();
                     const rankCell = row.insertCell(0);
                     const nameCell = row.insertCell(1);
                     const scoreCell = row.insertCell(2);
@@ -943,14 +1491,12 @@
                     // Optional: Highlight the player's score if just saved? Requires more complex logic.
                 });
             } catch (error) {
-                console.error("Error loading game over leaderboard: ", error);
-                gameOverLeaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Error loading leaderboard.</td></tr>';
+                console.error("Error loading game over leaderboard: ", error); // Log specific error
+                leaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Error loading leaderboard.</td></tr>';
             }
         }
 
         async function submitScore() {
-            await firebaseReadyPromise; // Wait until DB is confirmed ready
-
             const playerName = playerNameInput.value.trim();
 
             if (!playerName) {
@@ -966,7 +1512,8 @@
                  return;
             }
 
-            if (!db) { // Double check db
+            if (!db) { // Double check db before submitting
+                console.error("DB not ready in submitScore. Cannot save.");
                 saveStatusMessage.textContent = 'Error: Cannot connect to save.';
                  saveStatusMessage.style.color = 'red';
                 return;
@@ -995,7 +1542,7 @@
                 loadGameOverLeaderboard();
 
             } catch (error) {
-                console.error("Error saving score: ", error);
+                console.error("Error saving score: ", error); // Log specific error
                 saveStatusMessage.textContent = 'Error saving score. Please try again.';
                 saveStatusMessage.style.color = 'red';
                 // Re-enable on error
@@ -1006,13 +1553,343 @@
         }
 
         function restartGame() {
-            console.log("DEBUG: restartGame called."); // <<< Added Log
-            createBoard(); // <<< ADDED: Ensure board is explicitly reset FIRST
-            gameOverOverlay.style.display = 'none'; // Hide the overlay
-            // setup(false) handles resetting game state, showing game UI, etc.
-            initAudio(); // Re-initialize audio context if needed
-            setup(false); // Start a new game
+            console.log("DEBUG: restartGame called.");
+            gameOverOverlay.style.display = 'none';
+            saveScoreSection.style.display = 'none'; // Corrected variable: Hide save score section on restart
+            submitScoreButton.disabled = false; // Corrected variable: Re-enable button
+            submitScoreButton.textContent = 'Save Score'; // Corrected variable: Reset button text
+            // Clear the board array completely using correct dimensions
+            board = Array(boardHeight).fill(0).map(() => Array(boardWidth).fill(0)); // Corrected: Use boardHeight and boardWidth
+            console.log("Board reset in restartGame.");
+            // <<< ADDED DEBUG LOGGING >>>
+            console.log("Board state immediately after reset (Top 4 rows):");
+            for (let i = 0; i < Math.min(4, boardHeight); i++) {
+                console.log(`Row ${i}:`, JSON.stringify(board[i]));
+            }
+            console.log(`Board dimensions: ${boardHeight}x${boardWidth}`);
+            // <<< END ADDED DEBUG LOGGING >>>
+            setup(false); // Re-setup the game without initial settings load
+            // No need to call gameLoop here, setup(false) handles it if needed
         }
+
+        // <<< ADDED PAUSE MENU ELEMENT INITIALIZATION FUNCTION >>>
+        function initializePauseMenuElements() {
+            pauseMenuElements = {}; // Clear previous elements
+            const tempCtx = canvas.getContext('2d'); // Need context for measuring text
+            if (!tempCtx) return; // Safety check
+
+            const centerX = width / 2;
+            let currentY = height * 0.3; // Start below title
+
+            // Close Button (Top Right)
+            pauseMenuCloseButtonRect = {
+                x: width - PAUSE_MENU_CLOSE_BUTTON_SIZE - PAUSE_MENU_CLOSE_BUTTON_MARGIN,
+                y: PAUSE_MENU_CLOSE_BUTTON_MARGIN,
+                width: PAUSE_MENU_CLOSE_BUTTON_SIZE,
+                height: PAUSE_MENU_CLOSE_BUTTON_SIZE
+            };
+            pauseMenuElements['closeButton'] = {
+                type: 'closeButton',
+                rect: pauseMenuCloseButtonRect
+            };
+
+            const sliderWidth = width * PAUSE_MENU_SLIDER_WIDTH_RATIO;
+            const sliderX = centerX - sliderWidth / 2;
+
+            // Ghost Transparency Slider
+            pauseMenuElements['ghostSlider'] = {
+                type: 'slider',
+                label: 'Ghost Transparency', // <<< CHANGED LABEL
+                setting: 'ghostAlpha',
+                rect: { x: sliderX, y: currentY, width: sliderWidth, height: PAUSE_MENU_SLIDER_HEIGHT },
+                min: 0.01, max: 0.15
+            };
+            currentY += PAUSE_MENU_ITEM_GAP;
+
+            // Background Transparency Slider
+            pauseMenuElements['bgSlider'] = {
+                type: 'slider',
+                label: 'BG Transparency', // <<< CHANGED LABEL
+                setting: 'boardBackgroundAlpha',
+                rect: { x: sliderX, y: currentY, width: sliderWidth, height: PAUSE_MENU_SLIDER_HEIGHT },
+                min: 0.1, max: 1.0
+            };
+            currentY += PAUSE_MENU_ITEM_GAP;
+
+            // Buttons - Calculate positions dynamically
+            tempCtx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`;
+            const buttonWidthEstimate = tempCtx.measureText("Wireframe: OFF").width + PAUSE_MENU_BUTTON_PADDING_X * 2;
+            const buttonHeight = PAUSE_MENU_ITEM_FONT_SIZE + PAUSE_MENU_BUTTON_PADDING_Y * 2;
+            let buttonX = centerX - buttonWidthEstimate / 2;
+
+            // SFX Button
+             pauseMenuElements['sfxButton'] = {
+                type: 'button',
+                label: () => `SFX: ${settings_sfxEnabled ? 'ON' : 'OFF'}`, // Dynamic label
+                setting: 'sfxEnabled',
+                rect: { x: buttonX, y: currentY, width: buttonWidthEstimate, height: buttonHeight }
+            };
+            currentY += PAUSE_MENU_ITEM_GAP * 0.8;
+
+            // Wireframe Button
+            pauseMenuElements['wireframeButton'] = {
+                type: 'button',
+                label: () => `Wireframe: ${settings_useWireframeBlocks ? 'ON' : 'OFF'}`, // Dynamic label
+                setting: 'useWireframeBlocks',
+                 rect: { x: buttonX, y: currentY, width: buttonWidthEstimate, height: buttonHeight }
+            };
+             currentY += PAUSE_MENU_ITEM_GAP * 0.8;
+
+            // Fullscreen Button
+            pauseMenuElements['fullscreenButton'] = {
+                type: 'button',
+                label: () => (document.fullscreenElement || document.webkitFullscreenElement) ? "Exit Fullscreen" : "Enter Fullscreen", // Dynamic label
+                action: 'toggleFullscreen', // Specific action, not setting
+                 rect: { x: buttonX, y: currentY, width: buttonWidthEstimate, height: buttonHeight }
+            };
+             currentY += PAUSE_MENU_ITEM_GAP; // Add more space before leaderboard
+
+            // Leaderboard Area
+            const leaderboardHeight = height * 0.25; // Example height (adjust as needed)
+            const leaderboardWidth = width * 0.6;  // Example width
+            const leaderboardX = centerX - leaderboardWidth / 2;
+            pauseMenuElements['leaderboard'] = {
+                type: 'leaderboard',
+                label: 'Leaderboard (Top 100)',
+                rect: { x: leaderboardX, y: currentY, width: leaderboardWidth, height: leaderboardHeight }
+            };
+            // Note: currentY is not incremented further unless more elements are added below
+
+            console.log("Pause menu elements initialized:", pauseMenuElements);
+        }
+         // <<< END ADDED FUNCTION >>>
+
+        // <<< ADDED LEADERBOARD LOADING FUNCTION FOR PAUSE MENU >>>
+        async function loadPauseMenuLeaderboard() {
+            if (!db) {
+                console.error("DB not ready, cannot load pause menu leaderboard.");
+                pauseLeaderboardData = [{ rank: '', name: 'Error: DB not ready', score: '' }];
+                return;
+            }
+            console.log("Loading pause menu leaderboard...");
+            pauseLeaderboardData = [{ rank: '', name: 'Loading...', score: '' }]; // Set loading state
+            try {
+                const querySnapshot = await db.collection("leaderboard")
+                                              .orderBy("score", "desc")
+                                              .limit(100)
+                                              .get();
+
+                if (querySnapshot.empty) {
+                    pauseLeaderboardData = [{ rank: '', name: 'Leaderboard empty', score: '' }];
+                    return;
+                }
+
+                let rank = 1;
+                const scores = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    scores.push({ rank: rank++, name: data.name || "???", score: data.score });
+                });
+                pauseLeaderboardData = scores;
+                console.log("Pause leaderboard loaded:", pauseLeaderboardData.length, "entries");
+            } catch (error) {
+                console.error("Error loading pause menu leaderboard: ", error);
+                pauseLeaderboardData = [{ rank: '', name: 'Error loading scores', score: '' }];
+            }
+        }
+
+        function drawPauseMenu(timestamp) { // <<< Added timestamp parameter
+            if (!ctx || !width || !height || !pauseMenuInitialized) return;
+
+            ctx.fillStyle = `rgba(0, 0, 0, ${PAUSE_MENU_BG_ALPHA})`;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.font = `bold ${PAUSE_MENU_TITLE_FONT_SIZE}px monospace`;
+            ctx.fillStyle = PAUSE_MENU_TEXT_COLOR;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const titleY = height * 0.15;
+            // Apply glitch effect to title
+            let titleText = "PAUSED";
+            if (Math.random() < 0.08) { // Add some glitch
+                titleText = glitchText(titleText, 0.2);
+            }
+            ctx.fillText(titleText, width / 2, titleY);
+
+            // Draw elements
+            for (const key in pauseMenuElements) {
+                const el = pauseMenuElements[key];
+                if (!el || !el.rect) continue;
+
+                // Add subtle shimmer/flicker to elements
+                const flicker = Math.random() < 0.008;
+                const baseColor = PAUSE_MENU_TEXT_COLOR;
+                const elementColor = flicker ? '#ffffff' : baseColor;
+                const borderColor = flicker ? 'rgba(200, 255, 200, 0.9)' : 'rgba(0, 100, 0, 1)';
+                const handleColor = (activeSlider === key) ? '#ffffaa' : (flicker ? '#ddffdd' : '#aaffaa');
+
+                if (el.type === 'slider') {
+                    // ... (Draw Label with elementColor) ...
+                    ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`;
+                    ctx.fillStyle = elementColor; // Use themed color
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(el.label, width / 2, el.rect.y - 5);
+
+                    // ... (Draw Slider Track with themed border) ...
+                    ctx.fillStyle = 'rgba(0, 50, 0, 0.8)';
+                    ctx.fillRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+                    ctx.strokeStyle = borderColor; // Use themed border color
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+
+                    // ... (Draw Slider Handle with themed color) ...
+                    let currentVal = 0;
+                    if (el.setting === 'ghostAlpha') currentVal = settings_ghostAlpha;
+                    else if (el.setting === 'boardBackgroundAlpha') currentVal = settings_boardBackgroundAlpha;
+                    const ratio = clamp((currentVal - el.min) / (el.max - el.min), 0, 1);
+                    const handleX = el.rect.x + ratio * el.rect.width;
+                    const handleY = el.rect.y + el.rect.height / 2;
+                    el.handleX = handleX;
+                    el.handleY = handleY;
+                    ctx.fillStyle = handleColor; // Use themed handle color
+                    ctx.beginPath();
+                    ctx.arc(handleX, handleY, PAUSE_MENU_SLIDER_HANDLE_SIZE / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+                    ctx.stroke();
+
+                    // ... (Draw Value Text with elementColor) ...
+                    ctx.font = `${PAUSE_MENU_VALUE_FONT_SIZE}px monospace`;
+                    ctx.fillStyle = elementColor; // Use themed color
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(currentVal.toFixed(2), width / 2, el.rect.y + el.rect.height + 5);
+
+                } else if (el.type === 'button') {
+                    // ... (Draw Button Background with themed border) ...
+                    ctx.fillStyle = 'rgba(0, 50, 0, 0.8)';
+                    ctx.fillRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+                    ctx.strokeStyle = borderColor; // Use themed border color
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+
+                    // ... (Draw Button Text with elementColor and potential glitch) ...
+                    ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE}px monospace`;
+                    ctx.fillStyle = elementColor; // Use themed color
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    let buttonText = typeof el.label === 'function' ? el.label() : el.label;
+                    if (flicker || Math.random() < 0.02) buttonText = glitchText(buttonText, 0.15);
+                    ctx.fillText(buttonText, el.rect.x + el.rect.width / 2, el.rect.y + el.rect.height / 2);
+
+                } else if (el.type === 'closeButton') {
+                    // ... (Draw Close Button Background with themed border) ...
+                    ctx.fillStyle = 'rgba(50, 0, 0, 0.8)';
+                    ctx.fillRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+                    ctx.strokeStyle = flicker ? 'rgba(255, 100, 100, 0.9)' : 'rgba(100, 0, 0, 1)'; // Red themed border
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+
+                    // ... (Draw 'X' with themed color) ...
+                    ctx.strokeStyle = flicker ? '#ffffff' : '#ffaaaa'; // Red themed X
+                    ctx.lineWidth = 3;
+                    const padding = el.rect.width * 0.25;
+                    ctx.beginPath();
+                    ctx.moveTo(el.rect.x + padding, el.rect.y + padding);
+                    ctx.lineTo(el.rect.x + el.rect.width - padding, el.rect.y + el.rect.height - padding);
+                    ctx.moveTo(el.rect.x + el.rect.width - padding, el.rect.y + padding);
+                    ctx.lineTo(el.rect.x + padding, el.rect.y + el.rect.height - padding);
+                    ctx.stroke();
+                } else if (el.type === 'leaderboard') {
+                    // Draw Leaderboard Title
+                    ctx.font = `${PAUSE_MENU_ITEM_FONT_SIZE * 0.9}px monospace`; // Slightly smaller
+                    ctx.fillStyle = elementColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(el.label, el.rect.x + el.rect.width / 2, el.rect.y - 3);
+
+                    // Draw Container Box
+                    ctx.fillStyle = 'rgba(0, 15, 0, 0.7)';
+                    ctx.fillRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+                    ctx.strokeStyle = borderColor;
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+
+                    // <<< ADDED LEADERBOARD DRAWING LOGIC with LOGGING >>>
+                    console.log(`[DrawPauseMenu] Leaderboard Data:`, pauseLeaderboardData ? `${pauseLeaderboardData.length} entries` : 'null', `ScrollY: ${pauseLeaderboardScrollY.toFixed(1)}`); // Log data state and scroll
+                    ctx.save();
+                    ctx.beginPath(); // Define the clipping path
+                    ctx.rect(el.rect.x, el.rect.y, el.rect.width, el.rect.height);
+                    ctx.closePath();
+                    ctx.clip(); // Clip subsequent drawing to the leaderboard rect
+
+                    ctx.font = `${PAUSE_MENU_VALUE_FONT_SIZE * 0.8}px monospace`; // Very small text
+                    ctx.fillStyle = elementColor;
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+
+                    if (pauseLeaderboardData && Array.isArray(pauseLeaderboardData) && pauseLeaderboardData.length > 0) {
+                        let drawY = el.rect.y + 5 - pauseLeaderboardScrollY; // Start drawing based on scroll
+                        const lineHeight = PAUSE_MENU_VALUE_FONT_SIZE * 0.9; // Line height for small text
+                        let drawnCount = 0; // Counter for drawn entries
+
+                        for (const entry of pauseLeaderboardData) {
+                            // Basic check for valid entry structure
+                            if (typeof entry !== 'object' || entry === null || typeof entry.rank === 'undefined' || typeof entry.name === 'undefined' || typeof entry.score === 'undefined') {
+                                console.warn("[DrawPauseMenu] Skipping invalid leaderboard entry:", entry);
+                                continue; // Skip malformed entries
+                            }
+
+                            // Only draw if visible within the rect
+                            if (drawY >= el.rect.y - lineHeight && drawY < el.rect.y + el.rect.height) {
+                                let rankStr = entry.rank.toString().padStart(3);
+                                let scoreStr = entry.score.toString().padStart(7);
+                                let nameStr = entry.name.padEnd(12).substring(0, 12); // Pad/truncate name
+                                let textLine = `${rankStr} ${nameStr} ${scoreStr}`;
+                                if (Math.random() < 0.01) textLine = glitchText(textLine, 0.1); // Add glitch to entries too
+
+                                // LOGGING INSIDE LOOP:
+                                // console.log(`[DrawPauseMenu] Drawing entry: ${rankStr} at drawY: ${drawY.toFixed(1)}`);
+
+                                ctx.fillText(textLine, el.rect.x + 5, drawY);
+                                drawnCount++;
+                            }
+                            drawY += lineHeight;
+                            // Optimization: Stop drawing if we are already past the bottom visible edge
+                            if (drawY > el.rect.y + el.rect.height + lineHeight) {
+                               // console.log(`[DrawPauseMenu] Stopping draw loop early at drawY: ${drawY.toFixed(1)}`);
+                                break;
+                            }
+                        }
+                        // Log if no entries were actually drawn despite having data
+                        if (drawnCount === 0 && pauseLeaderboardData.length > 0) {
+                             console.warn(`[DrawPauseMenu] Leaderboard data exists (${pauseLeaderboardData.length} entries), but none were drawn. Check scroll/coordinates. First entry drawY would be: ${el.rect.y + 5 - pauseLeaderboardScrollY}`);
+                        }
+                    } else if (pauseLeaderboardData && pauseLeaderboardData.length === 1 && pauseLeaderboardData[0].name.includes('Loading')) {
+                         ctx.textAlign = 'center';
+                         ctx.fillText("Loading...", el.rect.x + el.rect.width / 2, el.rect.y + el.rect.height / 2 - lineHeight / 2);
+                         ctx.textAlign = 'left'; // Reset alignment
+                    } else if (pauseLeaderboardData && pauseLeaderboardData.length === 1 && pauseLeaderboardData[0].name.includes('Error')) {
+                         ctx.textAlign = 'center';
+                         ctx.fillText("Error loading", el.rect.x + el.rect.width / 2, el.rect.y + el.rect.height / 2 - lineHeight);
+                         ctx.fillText("leaderboard", el.rect.x + el.rect.width / 2, el.rect.y + el.rect.height / 2);
+                         ctx.textAlign = 'left'; // Reset alignment
+                    } else {
+                         ctx.textAlign = 'center';
+                         ctx.fillText("No scores yet.", el.rect.x + el.rect.width / 2, el.rect.y + el.rect.height / 2 - lineHeight / 2);
+                         ctx.textAlign = 'left'; // Reset alignment
+                    }
+
+                    ctx.restore(); // Remove clipping path
+                    // <<< END LEADERBOARD DRAWING LOGIC >>>
+                }
+            }
+
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        }
+        // <<< END REPLACED FUNCTION >>>
 
     })(); // End of IIFE
 
