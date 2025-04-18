@@ -298,7 +298,7 @@
             SPEED_UP: () => { 
                 const freq1 = 440, freq2 = 554, freq3 = 659;
                 // const dur = 60, gap = 70, vol = 0.09; // Original values
-                const dur = 80, gap = 90, vol = 0.12; // <<< Louder and longer values
+                const dur = 180, gap = 160, vol = 0.22; // <<< Louder and longer values
                 playTone(freq1, dur, 'triangle', vol);
                 setTimeout(() => playTone(freq2, dur, 'triangle', vol), gap);
                 setTimeout(() => playTone(freq3, dur * 1.2, 'triangle', vol), gap * 2);
