@@ -577,9 +577,63 @@
         function movePiece(dX, dY) { if (!currentPiece || isPaused || gameOver) return { moved: false, needsLock: false }; if (dY > 0 && isLockDelayActive) return { moved: false, needsLock: true }; if (isValidMove(currentPiece.shape, currentRow + dY, currentCol + dX)) { const oL = isLockDelayActive; currentCol += dX; currentRow += dY; if (dY > 0) { isLockDelayActive = false; } else if (dX !== 0 && oL && isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { isLockDelayActive = false; } const nL = dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol); return { moved: true, needsLock: nL }; } if (dY > 0 && !isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { return { moved: false, needsLock: true }; } } return { moved: false, needsLock: false }; }
         function hardDrop() { if (!currentPiece || isPaused || gameOver) return; if (isLockDelayActive) { lockPiece(); return; } const gR = calculateGhostPosition(); if (gR > currentRow) { SOUNDS.HARD_DROP(); currentRow = gR; if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } } else { lockPiece(); } } else { if (!isValidMove(currentPiece.shape, currentRow + 1, currentCol)) { if (!isLockDelayActive) { isLockDelayActive = true; lockDelayStartTime = performance.now(); } else { lockPiece(); } } else { lockPiece(); } } }
         function softDrop() { if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; const mR = movePiece(0, 1); if (mR.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; } else if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false; }
-        function lockPiece() { if(!currentPiece || isPaused || gameOver) return; isLockDelayActive = false; lockDelayStartTime = 0; let pL = false; for(let y=0; y<currentPiece.shape.length; y++) { for(let x=0; x<currentPiece.shape[y].length; x++) { if(currentPiece.shape[y][x]) { let bR = currentRow + y; let bC = currentCol + x; if (bC >= 0 && bC < boardWidth && bR < boardHeight) { if (bR < 0) { gameOver = true; break; } else { board[bR][bC] = currentPiece.colorIndex + 1; pL = true; } } } } if(gameOver) break; } if (gameOver) { isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (lockPiece)"); currentPiece = null; // REMOVED: saveScoreButton.style.display = 'block';
-            showGameOverScreen(); // <<< Call new function
-            return; } if (pL) { SOUNDS.LAND(); clearLines(); } else { console.warn("lockPiece called but no blocks landed?"); } spawnPiece(); }
+        function lockPiece() {
+            if(!currentPiece || isPaused || gameOver) return;
+            isLockDelayActive = false;
+            lockDelayStartTime = 0;
+
+            // --- Check for immediate Game Over BEFORE writing piece --- 
+            let isGameOverCondition = false;
+            for (let y = 0; y < currentPiece.shape.length; y++) {
+                for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                    if (currentPiece.shape[y][x]) {
+                        let bR = currentRow + y;
+                        if (bR < 0) { // Piece locked entirely or partially above the board
+                            isGameOverCondition = true;
+                            break;
+                        }
+                    }
+                }
+                if (isGameOverCondition) break;
+            }
+
+            if (isGameOverCondition) {
+                isPaused = true;
+                gameOver = true; // Set gameOver state here
+                saveHighScoreToFirestore();
+                SOUNDS.GAME_OVER();
+                console.error("GAME OVER (Piece locked above board)");
+                currentPiece = null; // Prevent further actions with this piece
+                showGameOverScreen();
+                return; // Exit function immediately
+            }
+            // --- End Game Over Check ---
+
+            let pieceLanded = false;
+            for(let y=0; y<currentPiece.shape.length; y++) {
+                for(let x=0; x<currentPiece.shape[y].length; x++) {
+                    if(currentPiece.shape[y][x]) {
+                        let bR = currentRow + y;
+                        let bC = currentCol + x;
+                        // We already checked bR < 0 above, but keep other boundary checks
+                        if (bC >= 0 && bC < boardWidth && bR >= 0 && bR < boardHeight) {
+                            board[bR][bC] = currentPiece.colorIndex + 1;
+                            pieceLanded = true;
+                        } // else: Part of the piece is outside side/bottom bounds - ignore it
+                    }
+                }
+            }
+
+            if (pieceLanded) {
+                SOUNDS.LAND();
+                clearLines();
+            } else {
+                // This case might happen if a piece somehow locks entirely outside the board bounds
+                // without triggering the game over check above (should be rare/impossible now)
+                console.warn("lockPiece called but no blocks landed within bounds?");
+            }
+            spawnPiece(); // Spawn next piece only if game didn't end
+        }
         function clearLines() { let cl = 0; let rTC = []; for (let r = boardHeight - 1; r >= 0; r--) { if (board[r].every(c => c !== 0)) { cl++; rTC.push(r); } } rTC.sort((a, b) => a - b); for (let i = rTC.length - 1; i >= 0; i--) { board.splice(rTC[i], 1); } for (let i = 0; i < cl; i++) { board.unshift(Array(boardWidth).fill(0)); } if (cl > 0) { score += cl * 100 * cl; totalLinesCleared += cl; if (cl === 4) { SOUNDS.TETRIS_CLEAR(); tetrisFlashEndTime = performance.now() + TETRIS_FLASH_DURATION; } else { SOUNDS.LINE_CLEAR(); flashEndTime = performance.now() + FLASH_DURATION; } while (totalLinesCleared >= nextSpeedUpMilestone) { dropInterval = Math.max(minDropInterval, dropInterval * SPEED_UP_MULTIPLIER); nextSpeedUpMilestone += LINES_PER_SPEED_INCREASE; console.log(`--- SPEED UP! Interval: ${dropInterval.toFixed(0)}ms. Next at ${nextSpeedUpMilestone} lines ---`); speedUpFlashEndTime = performance.now() + SPEED_UP_FLASH_DURATION; } } return cl; }
         function calculateGhostPosition() { if(!currentPiece||gameOver)return currentRow;let gR=currentRow;while(isValidMove(currentPiece.shape,gR+1,currentCol))gR++;return gR;}
         function swapPiece() { if (isPaused || gameOver || !canSwap) return; SOUNDS.HOLD_SWAP(); isLockDelayActive = false; if (heldPiece === null) { heldPiece = currentPiece; spawnPiece(); } else { let temp = currentPiece; currentPiece = heldPiece; heldPiece = temp; currentCol = Math.floor(boardWidth / 2) - Math.floor(currentPiece.shape[0].length / 2); currentRow = 0; if (!isValidMove(currentPiece.shape, currentRow, currentCol)) { gameOver = true; isPaused = true; saveHighScoreToFirestore(); SOUNDS.GAME_OVER(); console.log("GAME OVER (Swap)"); currentPiece = null; showGameOverScreen(); // <<< Call new function
@@ -931,6 +985,7 @@
 
         function restartGame() {
             console.log("Restarting game...");
+            createBoard(); // Ensure board is explicitly reset first
             gameOverOverlay.style.display = 'none'; // Hide the overlay
             // setup(false) handles resetting game state, showing game UI, etc.
             initAudio(); // Re-initialize audio context if needed
