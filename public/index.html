@@ -826,10 +826,43 @@
                 }
             }
         }
-        function softDrop() { if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; const mR = movePiece(0, 1); if (mR.moved) { SOUNDS.SOFT_DROP(); lastDropTime = performance.now(); score += 1; return true; } else if (mR.needsLock) { isLockDelayActive = true; lockDelayStartTime = performance.now(); return false; } return false; }
+        function softDrop() { 
+            // Check if the piece can be dropped
+            if (!currentPiece || isPaused || gameOver || isLockDelayActive) return false; 
+
+            // Attempt to move the piece down by one row
+            const moveResult = movePiece(0, 1); 
+
+            // If the move was successful
+            if (moveResult.moved) { 
+                // Play the soft drop sound
+                SOUNDS.SOFT_DROP(); 
+                // Update the last drop time
+                lastDropTime = performance.now(); 
+                // Increase the score by 1
+                //score += 1; 
+                // Return true to indicate a successful drop
+                return true; 
+            } 
+            // If the piece needs to be locked (can't move further down)
+            else if (moveResult.needsLock) { 
+                // Activate the lock delay
+                isLockDelayActive = true; 
+                // Record the start time of the lock delay
+                lockDelayStartTime = performance.now(); 
+                // Return false to indicate the piece is now locking
+                return false; 
+            } 
+            // If the move was not successful and no lock is needed
+            return false; 
+        }
         function lockPiece() {
-            if(!currentPiece || isPaused || gameOver) return;
-            isLockDelayActive = false;
+            // Check if the piece can be locked
+            if (!currentPiece || isPaused || gameOver) return;
+
+            // Deactivate the lock delay
+            isLockDelayActive = false; 
+            // Reset the lock delay start time
             lockDelayStartTime = 0;
 
             // --- Check for immediate Game Over BEFORE writing piece --- 
